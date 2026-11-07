@@ -1,0 +1,43 @@
+import { describe, expect, it } from "vitest";
+import { buildSections } from "../src/lib/sections";
+import { findEmoji } from "../src/lib/emoji-data";
+
+const e = (s: string) => findEmoji(s)!;
+
+describe("buildSections", () => {
+  it("shows recents for an empty query", () => {
+    const s = buildSections({ query: " ", ai: [], local: [], recents: [e("🔥"), e("🎉")] });
+    expect(s).toEqual([{ id: "recent", title: "Recently Used", emojis: [e("🔥"), e("🎉")] }]);
+  });
+
+  it("shows nothing for an empty query without recents", () => {
+    expect(buildSections({ query: "", ai: [], local: [], recents: [] })).toEqual([]);
+  });
+
+  it("shows AI suggestions first and name matches without duplicates", () => {
+    const s = buildSections({
+      query: "fire",
+      ai: [e("🔥"), e("🚒")],
+      local: [e("🔥"), e("🧯"), e("🚒"), e("🎆")],
+      recents: [e("🎉")],
+      aiTitle: "AI Suggestions · Claude",
+    });
+    expect(s.map((x) => x.id)).toEqual(["ai", "local"]);
+    expect(s[0]).toEqual({ id: "ai", title: "AI Suggestions · Claude", emojis: [e("🔥"), e("🚒")] });
+    expect(s[1].emojis).toEqual([e("🧯"), e("🎆")]);
+    expect(s[1].title).toBe("Matching Names");
+  });
+
+  it("omits empty sections", () => {
+    const s = buildSections({ query: "zzz", ai: [], local: [], recents: [] });
+    expect(s).toEqual([]);
+    const only = buildSections({ query: "x", ai: [e("❌")], local: [e("❌")], recents: [] });
+    expect(only.map((x) => x.id)).toEqual(["ai"]);
+  });
+
+  it("caps name matches", () => {
+    const local = [e("😀"), e("😃"), e("😄"), e("😁")];
+    const s = buildSections({ query: "x", ai: [], local, recents: [], localLimit: 2 });
+    expect(s[0].emojis).toHaveLength(2);
+  });
+});
