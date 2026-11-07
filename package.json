@@ -6,7 +6,9 @@
   "icon": "icon.png",
   "author": "hendrik77",
   "license": "MIT",
-  "categories": ["Productivity"],
+  "categories": [
+    "Productivity"
+  ],
   "commands": [
     {
       "name": "ai-emoji-search",
@@ -25,9 +27,18 @@
       "description": "Which Tinycast install to read the AI settings from.",
       "default": "com.tinycast.app",
       "data": [
-        { "title": "Tinycast", "value": "com.tinycast.app" },
-        { "title": "Tinycast Beta", "value": "com.tinycast.app.beta" },
-        { "title": "Tinycast Dev", "value": "com.tinycast.app.dev" }
+        {
+          "title": "Tinycast",
+          "value": "com.tinycast.app"
+        },
+        {
+          "title": "Tinycast Beta",
+          "value": "com.tinycast.app.beta"
+        },
+        {
+          "title": "Tinycast Dev",
+          "value": "com.tinycast.app.dev"
+        }
       ]
     },
     {
@@ -38,10 +49,22 @@
       "description": "How many emojis to ask the AI for.",
       "default": "24",
       "data": [
-        { "title": "12", "value": "12" },
-        { "title": "24", "value": "24" },
-        { "title": "36", "value": "36" },
-        { "title": "48", "value": "48" }
+        {
+          "title": "12",
+          "value": "12"
+        },
+        {
+          "title": "24",
+          "value": "24"
+        },
+        {
+          "title": "36",
+          "value": "36"
+        },
+        {
+          "title": "48",
+          "value": "48"
+        }
       ]
     },
     {
@@ -52,8 +75,14 @@
       "description": "What Enter does with the selected emoji.",
       "default": "paste",
       "data": [
-        { "title": "Paste to Active App", "value": "paste" },
-        { "title": "Copy to Clipboard", "value": "copy" }
+        {
+          "title": "Paste to Active App",
+          "value": "paste"
+        },
+        {
+          "title": "Copy to Clipboard",
+          "value": "copy"
+        }
       ]
     }
   ],
@@ -63,7 +92,9 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
+    "@types/react-test-renderer": "^19.3.1",
     "emojilib": "^4.0.3",
+    "react-test-renderer": "^19.3.1",
     "typescript": "^5.7.0",
     "unicode-emoji-json": "^0.9.0",
     "vitest": "^3.2.4"
