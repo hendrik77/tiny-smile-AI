@@ -1,0 +1,77 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "tiny-smile-ai",
+  "title": "Tiny Smile AI",
+  "description": "AI emoji search for Tinycast: describe a mood or situation and pick from fitting emojis suggested by your Tinycast AI model.",
+  "icon": "icon.png",
+  "author": "hendrik77",
+  "license": "MIT",
+  "categories": ["Productivity"],
+  "commands": [
+    {
+      "name": "ai-emoji-search",
+      "title": "AI Emoji Search",
+      "subtitle": "Tiny Smile AI",
+      "description": "Find the best fitting emoji for any situation using the AI model configured in Tinycast.",
+      "mode": "view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "channel",
+      "type": "dropdown",
+      "required": false,
+      "title": "Tinycast Channel",
+      "description": "Which Tinycast install to read the AI settings from.",
+      "default": "com.tinycast.app",
+      "data": [
+        { "title": "Tinycast", "value": "com.tinycast.app" },
+        { "title": "Tinycast Beta", "value": "com.tinycast.app.beta" },
+        { "title": "Tinycast Dev", "value": "com.tinycast.app.dev" }
+      ]
+    },
+    {
+      "name": "resultCount",
+      "type": "dropdown",
+      "required": false,
+      "title": "AI Suggestions",
+      "description": "How many emojis to ask the AI for.",
+      "default": "24",
+      "data": [
+        { "title": "12", "value": "12" },
+        { "title": "24", "value": "24" },
+        { "title": "36", "value": "36" },
+        { "title": "48", "value": "48" }
+      ]
+    },
+    {
+      "name": "primaryAction",
+      "type": "dropdown",
+      "required": false,
+      "title": "Primary Action",
+      "description": "What Enter does with the selected emoji.",
+      "default": "paste",
+      "data": [
+        { "title": "Paste to Active App", "value": "paste" },
+        { "title": "Copy to Clipboard", "value": "copy" }
+      ]
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^2.11.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "emojilib": "^4.0.3",
+    "typescript": "^5.7.0",
+    "unicode-emoji-json": "^0.9.0",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}
