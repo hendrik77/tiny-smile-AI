@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decodeAISettings, readTinycastAISettings, resolveRoute } from "../src/lib/tinycast-settings";
+import { decodeAISettings, listRouteChoices, PROVIDER_TITLES, readTinycastAISettings, resolveRoute } from "../src/lib/tinycast-settings";
 import type { AIConnection, ExecFn, TinycastAISettings } from "../src/lib/types";
 
 const data = (v: unknown) => new Uint8Array(Buffer.from(typeof v === "string" ? v : JSON.stringify(v)));
@@ -63,6 +63,81 @@ describe("decodeAISettings", () => {
     expect(d({ cursor: {} })).toEqual({ kind: "cursor", model: "" });
     expect(d({ bogus: {} })).toBeNull();
     expect(d({ api: { model: "m" } })).toBeNull();
+  });
+});
+
+describe("reasoningOptions decoding", () => {
+  const dec = (extra: Record<string, unknown>) =>
+    decodeAISettings({
+      aiConnections: data([{ id: C1, name: "a", provider: "openAI", baseURL: "https://api.openai.com/v1", models: ["gpt-5"], ...extra }]),
+    }).connections[0];
+  it("decodes efforts per model", () => {
+    const c = dec({ reasoningOptions: { "gpt-5": { efforts: ["default", "minimal", "low", "medium", "high"], defaultEffort: "default" } } });
+    expect(c.reasoningEfforts).toEqual({ "gpt-5": ["default", "minimal", "low", "medium", "high"] });
+  });
+  it("omits the field for garbage or missing options", () => {
+    expect("reasoningEfforts" in dec({})).toBe(false);
+    expect("reasoningEfforts" in dec({ reasoningOptions: "x" })).toBe(false);
+    expect("reasoningEfforts" in dec({ reasoningOptions: { m: { efforts: "low" }, n: 3, o: { efforts: [1, 2] } } })).toBe(false);
+  });
+  it("keeps only string entries and valid models", () => {
+    const c = dec({ reasoningOptions: { a: { efforts: ["low", 3, "high"] }, b: { nope: 1 } } });
+    expect(c.reasoningEfforts).toEqual({ a: ["low", "high"] });
+  });
+});
+
+describe("listRouteChoices", () => {
+  const base = (o: Partial<TinycastAISettings>): TinycastAISettings => ({
+    connections: [],
+    defaultModel: null,
+    disabledRoutes: [],
+    ...o,
+  });
+  it("returns [] for empty settings", () => {
+    expect(listRouteChoices(base({}))).toEqual([]);
+  });
+  it("lists models in connection then model order with ids, sources and default flag", () => {
+    const c1 = { ...conn(C1, ["a", "b"]), name: "  Mine " };
+    const c2 = { ...conn(C2, ["z"]), name: "  ", provider: "gemini" as const };
+    const r = listRouteChoices(base({ connections: [c1, c2], defaultModel: { kind: "api", connection: C1, model: "b" } }));
+    expect(r.map((x) => x.id)).toEqual([`api:${C1}:a`, `api:${C1}:b`, `api:${C2}:z`]);
+    expect(r.map((x) => x.source)).toEqual(["Mine", "Mine", PROVIDER_TITLES.gemini]);
+    expect(PROVIDER_TITLES.gemini).toBe("Google Gemini");
+    expect(r.map((x) => x.isDefault)).toEqual([false, true, false]);
+    expect(r[0]).toMatchObject({ model: "a", override: { kind: "api", connection: C1, model: "a" } });
+  });
+  it("excludes disabled connections", () => {
+    const r = listRouteChoices(base({ connections: [conn(C1), conn(C2, ["z"])], disabledRoutes: ["api:" + C1] }));
+    expect(r.map((x) => x.id)).toEqual([`api:${C2}:z`]);
+  });
+  it("includes a default model that is not in the list, first, flagged default", () => {
+    const r = listRouteChoices(base({ connections: [conn(C1, ["a"])], defaultModel: { kind: "api", connection: C1, model: "odd" } }));
+    expect(r.map((x) => x.model)).toEqual(["odd", "a"]);
+    expect(r.map((x) => x.isDefault)).toEqual([true, false]);
+  });
+  it("adds a cli choice for an enabled claude/codex default", () => {
+    const r = listRouteChoices(base({ connections: [conn(C1, ["a"])], defaultModel: { kind: "claude", model: "sonnet" } }));
+    expect(r.find((x) => x.id === "cli:claude:sonnet")).toEqual({
+      id: "cli:claude:sonnet",
+      model: "sonnet",
+      source: "Claude Code",
+      override: { kind: "cli", tool: "claude", model: "sonnet" },
+      isDefault: true,
+    });
+    expect(r.find((x) => x.id === `api:${C1}:a`)?.isDefault).toBe(false);
+    const x = listRouteChoices(base({ defaultModel: { kind: "codex", model: "g" } }));
+    expect(x[0]).toMatchObject({ id: "cli:codex:g", source: "Codex" });
+    expect(listRouteChoices(base({ defaultModel: { kind: "codex", model: "g" }, disabledRoutes: ["codex"] }))).toEqual([]);
+  });
+  it("flags the fall-forward route as default when the real default is unusable", () => {
+    const r = listRouteChoices(base({ connections: [conn(C2, ["z", "y"])], defaultModel: { kind: "api", connection: C1, model: "m" } }));
+    expect(r.map((x) => x.isDefault)).toEqual([true, false]);
+  });
+  it("flags nothing when resolveRoute fails", () => {
+    const r = listRouteChoices(base({ connections: [conn(C1, ["a"])], disabledRoutes: ["api:" + C1] }));
+    expect(r).toEqual([]);
+    const r2 = listRouteChoices(base({ connections: [conn(C1, [])] }));
+    expect(r2.some((x) => x.isDefault)).toBe(false);
   });
 });
 
@@ -154,6 +229,46 @@ describe("resolveRoute", () => {
     expect(resolveRoute(base({}))).toEqual({
       ok: false,
       reason: "No AI provider is set up. Add one in Tinycast → Settings → AI → Providers.",
+    });
+  });
+});
+
+describe("resolveRoute with override", () => {
+  const base = (o: Partial<TinycastAISettings>): TinycastAISettings => ({
+    connections: [],
+    defaultModel: null,
+    disabledRoutes: [],
+    ...o,
+  });
+  const c1 = conn(C1), c2 = conn(C2, ["z"]);
+  const def = { kind: "api", connection: C1, model: "m1" } as const;
+  it("uses a valid api override, even for an unlisted model", () => {
+    const s = base({ connections: [c1, c2], defaultModel: def });
+    expect(resolveRoute(s, { kind: "api", connection: C2, model: "z" })).toEqual({
+      ok: true,
+      route: { kind: "api", connection: c2, model: "z" },
+    });
+    expect(resolveRoute(s, { kind: "api", connection: C2, model: "unlisted" })).toEqual({
+      ok: true,
+      route: { kind: "api", connection: c2, model: "unlisted" },
+    });
+  });
+  it("falls back to the default for disabled/missing connections", () => {
+    const expected = { ok: true, route: { kind: "api", connection: c1, model: "m1" } };
+    const ov = { kind: "api", connection: C2, model: "z" } as const;
+    expect(resolveRoute(base({ connections: [c1, c2], defaultModel: def, disabledRoutes: ["api:" + C2] }), ov)).toEqual(expected);
+    expect(resolveRoute(base({ connections: [c1], defaultModel: def }), ov)).toEqual(expected);
+    expect(resolveRoute(base({ connections: [c1], defaultModel: def }), null)).toEqual(expected);
+  });
+  it("supports cli overrides when enabled", () => {
+    const s = base({ connections: [c1], defaultModel: def });
+    expect(resolveRoute(s, { kind: "cli", tool: "codex", model: "g" })).toEqual({
+      ok: true,
+      route: { kind: "cli", tool: "codex", model: "g" },
+    });
+    expect(resolveRoute({ ...s, disabledRoutes: ["codex"] }, { kind: "cli", tool: "codex", model: "g" })).toEqual({
+      ok: true,
+      route: { kind: "api", connection: c1, model: "m1" },
     });
   });
 });

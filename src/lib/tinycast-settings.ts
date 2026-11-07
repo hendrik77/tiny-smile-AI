@@ -4,11 +4,23 @@ import type {
   ExecFn,
   ModelSelection,
   ProviderKind,
+  RouteChoice,
+  RouteOverride,
   RouteResolution,
   TinycastAISettings,
 } from "./types";
 
 const PROVIDERS: ProviderKind[] = ["openAI", "anthropic", "gemini", "openRouter", "openAICompatible"];
+
+export const PROVIDER_TITLES: Record<ProviderKind, string> = {
+  openAI: "OpenAI API",
+  anthropic: "Anthropic Claude",
+  gemini: "Google Gemini",
+  openRouter: "OpenRouter",
+  openAICompatible: "OpenAI Compatible",
+};
+
+const CLI_TITLES = { claude: "Claude Code", codex: "Codex" } as const;
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -23,6 +35,17 @@ function decodeJSONData(v: unknown): unknown {
   return undefined;
 }
 
+function decodeReasoningEfforts(v: unknown): Record<string, string[]> | undefined {
+  if (!isObj(v)) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [model, opt] of Object.entries(v)) {
+    if (!isObj(opt) || !Array.isArray(opt.efforts)) continue;
+    const efforts = opt.efforts.filter((x): x is string => typeof x === "string");
+    if (efforts.length > 0) out[model] = efforts;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function decodeConnections(v: unknown): AIConnection[] {
   const json = decodeJSONData(v);
   if (!Array.isArray(json)) return [];
@@ -33,12 +56,14 @@ function decodeConnections(v: unknown): AIConnection[] {
     if (typeof id !== "string" || !id) continue;
     if (typeof provider !== "string" || !PROVIDERS.includes(provider as ProviderKind)) continue;
     if (typeof baseURL !== "string" || !baseURL) continue;
+    const reasoningEfforts = decodeReasoningEfforts(e.reasoningOptions);
     out.push({
       id,
       name: typeof e.name === "string" ? e.name : id,
       provider: provider as ProviderKind,
       baseURL,
       models: Array.isArray(e.models) ? e.models.filter((m): m is string => typeof m === "string") : [],
+      ...(reasoningEfforts ? { reasoningEfforts } : {}),
     });
   }
   return out;
@@ -96,9 +121,16 @@ export async function readTinycastAISettings(bundleId: string, exec: ExecFn): Pr
 const SETUP_HINT = "Add an API connection in Tinycast → Settings → AI → Providers.";
 const UNSUPPORTED: Record<string, string> = { grok: "Grok", openCode: "OpenCode", cursor: "Cursor" };
 
-export function resolveRoute(settings: TinycastAISettings): RouteResolution {
+export function resolveRoute(settings: TinycastAISettings, override?: RouteOverride | null): RouteResolution {
   const { connections, defaultModel: def, disabledRoutes } = settings;
   const enabled = (key: string) => !disabledRoutes.includes(key);
+
+  if (override?.kind === "api") {
+    const c = connections.find((x) => x.id === override.connection);
+    if (c && enabled(`api:${c.id}`)) return { ok: true, route: { kind: "api", connection: c, model: override.model } };
+  } else if (override?.kind === "cli" && enabled(override.tool)) {
+    return { ok: true, route: { kind: "cli", tool: override.tool, model: override.model } };
+  }
 
   if (def?.kind === "api") {
     const c = connections.find((x) => x.id === def.connection);
@@ -117,4 +149,34 @@ export function resolveRoute(settings: TinycastAISettings): RouteResolution {
     return { ok: false, reason: `${UNSUPPORTED[def.kind]} isn't supported yet. ${SETUP_HINT}` };
   }
   return { ok: false, reason: "No AI provider is set up. Add one in Tinycast → Settings → AI → Providers." };
+}
+
+export function listRouteChoices(settings: TinycastAISettings): RouteChoice[] {
+  const { connections, defaultModel: def, disabledRoutes } = settings;
+  const enabled = (key: string) => !disabledRoutes.includes(key);
+  const resolved = resolveRoute(settings);
+  const out: RouteChoice[] = [];
+  const isDefault = (r: RouteOverride) => {
+    if (!resolved.ok) return false;
+    const x = resolved.route;
+    return r.kind === "api"
+      ? x.kind === "api" && x.connection.id === r.connection && x.model === r.model
+      : x.kind === "cli" && x.tool === r.tool && x.model === r.model;
+  };
+  const push = (id: string, source: string, override: RouteOverride) =>
+    out.push({ id, model: override.model, source, override, isDefault: isDefault(override) });
+
+  for (const c of connections) {
+    if (!enabled(`api:${c.id}`)) continue;
+    const source = c.name.trim() || PROVIDER_TITLES[c.provider];
+    const models = [...c.models];
+    if (def?.kind === "api" && def.connection === c.id && def.model && !models.includes(def.model)) {
+      models.unshift(def.model);
+    }
+    for (const model of models) push(`api:${c.id}:${model}`, source, { kind: "api", connection: c.id, model });
+  }
+  if ((def?.kind === "claude" || def?.kind === "codex") && enabled(def.kind)) {
+    push(`cli:${def.kind}:${def.model}`, CLI_TITLES[def.kind], { kind: "cli", tool: def.kind, model: def.model });
+  }
+  return out;
 }

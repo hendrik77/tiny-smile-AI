@@ -55,6 +55,17 @@ Requests per API shape (same rules as Tinycast's `AIHTTPConfiguration.endpointUR
 
 When running inside real Raycast (`environment.canAccess(AI)` is true) the extension uses `AI.ask`.
 
+## Speed (added after first use)
+
+- **Model choice:** a "Choose AI Model…" action (⌘M) lists every enabled Tinycast connection and
+  model (`listRouteChoices`). The pick is stored in LocalStorage and passed as a `RouteOverride`;
+  `resolveRoute` ignores an override whose connection is gone or switched off.
+- **Minimal thinking:** `fastestEffort` picks the lowest declared level for the model ("none" >
+  "minimal" > "low"). It is sent the way Tinycast sends it: Responses `reasoning.effort`,
+  OpenRouter `reasoning.effort`, gateway "none" as `thinking: {type: disabled}`, other
+  OpenAI-compatible `reasoning_effort`, Anthropic `output_config.effort`. On HTTP 400/422 the
+  request is retried once without it.
+
 ## Architecture
 
 ```

@@ -162,3 +162,103 @@ describe("createSuggester", () => {
     expect((d.exec as ExecFn & { calls: string[][] }).calls).toHaveLength(0);
   });
 });
+
+describe("model override, listRoutes and minimizeThinking", () => {
+  const OTHER = "11111111-2222-3333-4444-555555555555";
+  const multiPlist = plistWith({
+    aiConnections: b64([
+      {
+        id: CONN_ID,
+        name: "Claude",
+        provider: "anthropic",
+        baseURL: "https://api.anthropic.com",
+        models: ["claude-x", "claude-y"],
+        reasoningOptions: { "claude-x": { efforts: ["default", "low", "high"], defaultEffort: "default" } },
+      },
+      { id: OTHER, name: "", provider: "openRouter", baseURL: "https://openrouter.ai/api/v1", models: ["or-m"] },
+    ]),
+    aiDefaultModel: b64({ api: { connection: CONN_ID, model: "claude-x" } }),
+  });
+  const opts = { bundleId: "com.tinycast.app", count: 24 };
+  const sent = (d: SuggesterDeps) =>
+    (d.fetch as unknown as { mock: ReturnType<typeof vi.fn> }).mock.mock.calls.map(
+      (c) => ({ url: c[0] as string, body: JSON.parse(c[1].body) }),
+    );
+
+  it("override changes the route and label", async () => {
+    const d = deps({
+      exec: makeExec(multiPlist),
+      fetch: makeFetch(JSON.stringify({ choices: [{ message: { content: '["🔥"]' } }] })),
+    });
+    const suggest = createSuggester(d);
+    const r = await suggest("party", { ...opts, override: { kind: "api", connection: OTHER, model: "or-m" } });
+    expect(r.routeLabel).toBe("OpenRouter · or-m");
+    expect(sent(d)[0].url).toBe("https://openrouter.ai/api/v1/chat/completions");
+  });
+
+  it("switching override does not re-run defaults export or re-read the same key", async () => {
+    const exec = makeExec(multiPlist);
+    const d = deps({ exec, fetch: makeFetch(anthropicAnswer('["🔥"]')) });
+    const suggest = createSuggester(d);
+    const a = { kind: "api", connection: CONN_ID, model: "claude-y" } as const;
+    const b = { kind: "api", connection: CONN_ID, model: "claude-x" } as const;
+    await suggest("p", { ...opts, override: a });
+    await suggest("p", { ...opts, override: b });
+    await suggest("p", { ...opts, override: null });
+    await suggest("p2", { ...opts, override: a });
+    expect(exec.calls.filter((c) => c[0].endsWith("defaults"))).toHaveLength(1);
+    expect(exec.calls.filter((c) => c.includes("com.tinycast.app.ai-api-keys"))).toHaveLength(1);
+  });
+
+  it("an unusable override falls back to the Tinycast default", async () => {
+    const suggest = createSuggester(deps({ exec: makeExec(multiPlist) }));
+    const r = await suggest("p", { ...opts, override: { kind: "api", connection: "GONE", model: "x" } });
+    expect(r.routeLabel).toBe("Claude · claude-x");
+  });
+
+  it("cache keys differ per override", async () => {
+    const d = deps({ exec: makeExec(multiPlist), fetch: makeFetch(anthropicAnswer('["🔥"]')) });
+    const suggest = createSuggester(d);
+    await suggest("p", opts);
+    await suggest("p", { ...opts, override: { kind: "api", connection: CONN_ID, model: "claude-y" } });
+    expect(sent(d)).toHaveLength(2);
+    await suggest("p", { ...opts, override: { kind: "api", connection: CONN_ID, model: "claude-y" } });
+    expect(sent(d)).toHaveLength(2);
+  });
+
+  it("listRoutes lists choices from the memoized settings", async () => {
+    const exec = makeExec(multiPlist);
+    const suggest = createSuggester(deps({ exec }));
+    const list = await suggest.listRoutes("com.tinycast.app");
+    expect(list.map((c) => [c.id, c.source, c.isDefault])).toEqual([
+      [`api:${CONN_ID}:claude-x`, "Claude", true],
+      [`api:${CONN_ID}:claude-y`, "Claude", false],
+      [`api:${OTHER}:or-m`, "OpenRouter", false],
+    ]);
+    await suggest("p", opts);
+    await suggest.listRoutes("com.tinycast.app");
+    expect(exec.calls.filter((c) => c[0].endsWith("defaults"))).toHaveLength(1);
+  });
+
+  it("listRoutes returns [] with raycastAsk", async () => {
+    const suggest = createSuggester(deps({ raycastAsk: async () => "🍕" }));
+    expect(await suggest.listRoutes("com.tinycast.app")).toEqual([]);
+  });
+
+  it("sends the fastest declared effort by default and omits it when minimizeThinking is false", async () => {
+    const d = deps({ exec: makeExec(multiPlist) });
+    const suggest = createSuggester(d);
+    await suggest("p", opts);
+    await suggest("p", { ...opts, minimizeThinking: false });
+    const [first, second] = sent(d);
+    expect(first.body.output_config).toEqual({ effort: "low" });
+    expect(second.body.output_config).toBeUndefined();
+  });
+
+  it("claude-y has no declared effort, so none is sent", async () => {
+    const d = deps({ exec: makeExec(multiPlist) });
+    await createSuggester(d)("p", { ...opts, override: { kind: "api", connection: CONN_ID, model: "claude-y" } });
+    expect(sent(d)[0].body.output_config).toBeUndefined();
+  });
+});
+

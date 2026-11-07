@@ -12,6 +12,8 @@ type ExtensionPreferences = {
   "channel": "com.tinycast.app" | "com.tinycast.app.beta" | "com.tinycast.app.dev",
   /** AI Suggestions - How many emojis to ask the AI for. */
   "resultCount": "12" | "24" | "36" | "48",
+  /** Speed - Ask thinking models to reason as little as possible, using the lowest level declared for the model in Tinycast. */
+  "minimizeThinking": boolean,
   /** Primary Action - What Enter does with the selected emoji. */
   "primaryAction": "paste" | "copy"
 }

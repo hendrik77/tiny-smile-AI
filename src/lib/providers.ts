@@ -18,6 +18,26 @@ export function apiShape(conn: AIConnection): ApiShape {
   return "openAICompatible";
 }
 
+const DEFAULT_BASE_URLS: Record<AIConnection["provider"], string> = {
+  openAI: "https://api.openai.com/v1",
+  anthropic: "https://api.anthropic.com",
+  gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
+  openRouter: "https://openrouter.ai/api/v1",
+  openAICompatible: "https://api.openai.com/v1",
+};
+
+/** Gateways (a custom base URL on a chat-completions shape) take a `thinking` field, as in Tinycast. */
+function takesThinkingField(conn: AIConnection): boolean {
+  return apiShape(conn) === "openAICompatible" && conn.baseURL.trim() !== DEFAULT_BASE_URLS[conn.provider];
+}
+
+/** The lowest reasoning level Tinycast declares for this model, or null. Never guesses. */
+export function fastestEffort(conn: AIConnection, model: string): string | null {
+  const declared = conn.reasoningEfforts?.[model];
+  if (!declared) return null;
+  return ["none", "minimal", "low"].find((e) => declared.includes(e)) ?? null;
+}
+
 export function endpointURL(conn: AIConnection): string {
   const base = conn.baseURL.trim().replace(/\/+$/, "");
   switch (apiShape(conn)) {
@@ -50,12 +70,13 @@ export function buildHttpRequest(
   prompt: EmojiPrompt,
   apiKey: string | null,
   extraHeaders: Record<string, string>,
+  effort: string | null = null,
 ): { url: string; init: { method: "POST"; headers: Record<string, string>; body: string } } {
   const url = endpointURL(conn);
   assertSafeEndpoint(url);
   const shape = apiShape(conn);
   const headers: Record<string, string> = { "content-type": "application/json" };
-  let body: unknown;
+  let body: Record<string, unknown>;
 
   if (shape === "anthropic") {
     headers["anthropic-version"] = "2023-06-01";
@@ -78,6 +99,14 @@ export function buildHttpRequest(
       ],
       stream: false,
     };
+  }
+
+  if (effort !== null) {
+    if (shape === "openAIResponses") body.reasoning = { effort };
+    else if (shape === "anthropic") body.output_config = { effort };
+    else if (conn.provider === "openRouter") body.reasoning = { effort };
+    else if (effort === "none" && takesThinkingField(conn)) body.thinking = { type: "disabled" };
+    else body.reasoning_effort = effort;
   }
 
   for (const [k, v] of Object.entries(extraHeaders)) {
@@ -148,10 +177,18 @@ export async function callApi(
   apiKey: string | null,
   extraHeaders: Record<string, string>,
   fetchFn: FetchFn,
+  effort: string | null = null,
 ): Promise<string> {
-  const { url, init } = buildHttpRequest(conn, model, prompt, apiKey, extraHeaders);
-  const res = await fetchFn(url, init);
-  const text = await res.text();
+  const send = async (e: string | null) => {
+    const { url, init } = buildHttpRequest(conn, model, prompt, apiKey, extraHeaders, e);
+    const r = await fetchFn(url, init);
+    return { res: r, text: await r.text() };
+  };
+  let { res, text } = await send(effort);
+  // Some providers/models reject the reasoning field: retry once without it.
+  if (!res.ok && effort !== null && (res.status === 400 || res.status === 422)) {
+    ({ res, text } = await send(null));
+  }
   if (!res.ok) throw new Error(describeHttpError(res.status, text));
   let json: unknown;
   try {
