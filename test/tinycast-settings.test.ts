@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { decodeAISettings, listRouteChoices, PROVIDER_TITLES, readTinycastAISettings, resolveRoute } from "../src/lib/tinycast-settings";
+import {
+  decodeAISettings,
+  listRawAIKeys,
+  listRouteChoices,
+  PROVIDER_TITLES,
+  readTinycastAISettings,
+  readTinycastAISettingsDetailed,
+  resolveRoute,
+  routeLabel,
+} from "../src/lib/tinycast-settings";
 import type { AIConnection, ExecFn, TinycastAISettings } from "../src/lib/types";
 
 const data = (v: unknown) => new Uint8Array(Buffer.from(typeof v === "string" ? v : JSON.stringify(v)));
@@ -407,5 +416,51 @@ describe("listRouteChoices with installed tools", () => {
   it("omits tools that are not enabled or are disabled", () => {
     expect(listRouteChoices(base({}))).toEqual([]);
     expect(listRouteChoices(base({ enabledInstalledProviders: ["claude"], disabledRoutes: ["claude"] }))).toEqual([]);
+  });
+});
+
+describe("listRawAIKeys", () => {
+  it("lists only ai* keys, sorted, with plist types", () => {
+    const keys = listRawAIKeys({
+      zeta: "x",
+      aiZ: 1.5,
+      aiConnections: data("[]"),
+      aiDisabledRoutes: [],
+      aiMap: {},
+      aiFlag: true,
+      aiName: "s",
+      aiCount: 3,
+      aiOdd: null,
+    });
+    expect(keys).toEqual([
+      { name: "aiConnections", type: "data" },
+      { name: "aiCount", type: "integer" },
+      { name: "aiDisabledRoutes", type: "array" },
+      { name: "aiFlag", type: "boolean" },
+      { name: "aiMap", type: "dict" },
+      { name: "aiName", type: "string" },
+      { name: "aiOdd", type: "unknown" },
+      { name: "aiZ", type: "real" },
+    ]);
+  });
+  it("tolerates non-objects", () => {
+    expect(listRawAIKeys(null)).toEqual([]);
+    expect(listRawAIKeys("x")).toEqual([]);
+  });
+});
+
+describe("readTinycastAISettingsDetailed", () => {
+  it("returns settings and raw keys", async () => {
+    const plist = `<?xml version="1.0"?><plist version="1.0"><dict><key>aiDisabledRoutes</key><array><string>claude</string></array><key>other</key><string>x</string></dict></plist>`;
+    const r = await readTinycastAISettingsDetailed("x", async () => ({ stdout: plist, stderr: "" }));
+    expect(r.settings.disabledRoutes).toEqual(["claude"]);
+    expect(r.rawKeys).toEqual([{ name: "aiDisabledRoutes", type: "array" }]);
+  });
+});
+
+describe("routeLabel", () => {
+  it("labels api and cli routes", () => {
+    expect(routeLabel({ kind: "cli", tool: "claude", model: "" })).toBe("Claude Code · default model");
+    expect(routeLabel({ kind: "api", connection: conn(C1), model: "m" })).toBe("nC1 · m".replace("nC1", "n" + C1.slice(0, 2)));
   });
 });

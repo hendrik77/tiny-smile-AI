@@ -1,6 +1,7 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "tiny-smile-ai",
+  "version": "1.0.0",
   "title": "Tiny Smile AI",
   "description": "AI emoji search for Tinycast: describe a mood or situation and pick from fitting emojis suggested by your Tinycast AI model.",
   "icon": "icon.png",

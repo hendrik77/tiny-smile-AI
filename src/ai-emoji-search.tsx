@@ -3,6 +3,7 @@ import {
   Action,
   ActionPanel,
   Cache,
+  Clipboard,
   Grid,
   Icon,
   LocalStorage,
@@ -18,8 +19,18 @@ import { findEmoji } from "./lib/emoji-data";
 import { execFileAsync } from "./lib/exec";
 import { searchLocal } from "./lib/local-search";
 import { buildSections } from "./lib/sections";
-import { NoRouteError, createSuggester, type SuggesterDeps } from "./lib/suggest";
-import type { EmojiEntry, FetchFn, RouteChoice, RouteOverride } from "./lib/types";
+import {
+  NoRouteError,
+  createSuggester,
+  type SuggesterDeps,
+} from "./lib/suggest";
+import type {
+  EmojiEntry,
+  FetchFn,
+  RouteChoice,
+  RouteOverride,
+} from "./lib/types";
+import { version as extensionVersion } from "./lib/version";
 import { ModelPicker } from "./model-picker";
 
 const DEBOUNCE_MS = 450;
@@ -51,7 +62,9 @@ function makeDeps(): SuggesterDeps {
     home: homedir(),
     exists: (path) => existsSync(path),
     cache: new Cache({ namespace: "ai-suggestions" }),
-    raycastAsk: canUseRaycastAI() ? (prompt) => AI.ask(prompt, { creativity: "low" }) : undefined,
+    raycastAsk: canUseRaycastAI()
+      ? (prompt) => AI.ask(prompt, { creativity: "low" })
+      : undefined,
   };
 }
 
@@ -71,7 +84,11 @@ function useRecents() {
       try {
         const list: unknown = raw ? JSON.parse(raw) : [];
         if (Array.isArray(list)) {
-          setRecents(list.map((e) => (typeof e === "string" ? findEmoji(e) : undefined)).filter(Boolean) as EmojiEntry[]);
+          setRecents(
+            list
+              .map((e) => (typeof e === "string" ? findEmoji(e) : undefined))
+              .filter(Boolean) as EmojiEntry[],
+          );
         }
       } catch {
         // A garbled list is simply forgotten.
@@ -81,8 +98,14 @@ function useRecents() {
 
   function remember(entry: EmojiEntry) {
     setRecents((current) => {
-      const next = [entry, ...current.filter((e) => e.emoji !== entry.emoji)].slice(0, MAX_RECENTS);
-      LocalStorage.setItem(RECENTS_KEY, JSON.stringify(next.map((e) => e.emoji)));
+      const next = [
+        entry,
+        ...current.filter((e) => e.emoji !== entry.emoji),
+      ].slice(0, MAX_RECENTS);
+      LocalStorage.setItem(
+        RECENTS_KEY,
+        JSON.stringify(next.map((e) => e.emoji)),
+      );
       return next;
     });
   }
@@ -99,10 +122,18 @@ function parseOverride(raw: string | undefined): RouteOverride | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw);
-    if (value?.kind === "api" && typeof value.connection === "string" && typeof value.model === "string") {
+    if (
+      value?.kind === "api" &&
+      typeof value.connection === "string" &&
+      typeof value.model === "string"
+    ) {
       return { kind: "api", connection: value.connection, model: value.model };
     }
-    if (value?.kind === "cli" && (value.tool === "claude" || value.tool === "codex") && typeof value.model === "string") {
+    if (
+      value?.kind === "cli" &&
+      (value.tool === "claude" || value.tool === "codex") &&
+      typeof value.model === "string"
+    ) {
       return { kind: "cli", tool: value.tool, model: value.model };
     }
   } catch {
@@ -113,7 +144,10 @@ function parseOverride(raw: string | undefined): RouteOverride | null {
 
 /** The model picked for emoji search; `null` follows Tinycast's default. `ready` is false until loaded. */
 function useModelOverride() {
-  const [state, setState] = useState<{ ready: boolean; override: RouteOverride | null }>({
+  const [state, setState] = useState<{
+    ready: boolean;
+    override: RouteOverride | null;
+  }>({
     ready: false,
     override: null,
   });
@@ -151,14 +185,47 @@ export default function Command() {
   const modelKey = JSON.stringify(model.override);
 
   const loadChoices = (): Promise<RouteChoice[]> =>
-    suggester.current?.listRoutes ? suggester.current.listRoutes(bundleId) : Promise.resolve([]);
+    suggester.current?.listRoutes
+      ? suggester.current.listRoutes(bundleId)
+      : Promise.resolve([]);
+  const lastError = useRef<string | undefined>(undefined);
+  const copyDiagnostics = async () => {
+    const report = await suggester.current!.diagnose({
+      bundleId,
+      override: model.override,
+      minimizeThinking,
+      count,
+      extensionVersion,
+      lastError: lastError.current,
+    });
+    await Clipboard.copy(report);
+    await showToast({
+      style: Toast.Style.Success,
+      title: "Diagnostics copied",
+      message: "Paste them into a GitHub issue",
+    });
+  };
   const chooseModel = (
-    <Action.Push
-      title="Choose AI Model…"
-      icon={Icon.Stars}
-      shortcut={{ modifiers: ["cmd"], key: "m" }}
-      target={<ModelPicker loadChoices={loadChoices} current={model.override} onChoose={model.choose} />}
-    />
+    <>
+      <Action.Push
+        title="Choose AI Model…"
+        icon={Icon.Stars}
+        shortcut={{ modifiers: ["cmd"], key: "m" }}
+        target={
+          <ModelPicker
+            loadChoices={loadChoices}
+            current={model.override}
+            onChoose={model.choose}
+          />
+        }
+      />
+      <Action
+        title="Copy Diagnostics"
+        icon={Icon.Bug}
+        shortcut={{ modifiers: ["cmd", "shift"], key: "d" }}
+        onAction={copyDiagnostics}
+      />
+    </>
   );
 
   useEffect(() => {
@@ -170,17 +237,33 @@ export default function Command() {
     }
     let cancelled = false;
     setLoading(true);
-    suggester.current!(debouncedQuery, { bundleId, count, override: model.override, minimizeThinking })
+    suggester.current!(debouncedQuery, {
+      bundleId,
+      count,
+      override: model.override,
+      minimizeThinking,
+    })
       .then((result) => {
-        if (!cancelled) setAI({ query: debouncedQuery, modelKey, emojis: result.emojis, label: result.routeLabel });
+        if (cancelled) return;
+        lastError.current = undefined;
+        setAI({
+          query: debouncedQuery,
+          modelKey,
+          emojis: result.emojis,
+          label: result.routeLabel,
+        });
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : String(error);
+        lastError.current = message;
         setAI({ query: debouncedQuery, modelKey, emojis: [], error: message });
         showToast({
           style: Toast.Style.Failure,
-          title: error instanceof NoRouteError ? "No AI model available" : "AI emoji search failed",
+          title:
+            error instanceof NoRouteError
+              ? "No AI model available"
+              : "AI emoji search failed",
           message,
         });
       })
@@ -190,7 +273,14 @@ export default function Command() {
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, bundleId, count, modelKey, model.ready, minimizeThinking]);
+  }, [
+    debouncedQuery,
+    bundleId,
+    count,
+    modelKey,
+    model.ready,
+    minimizeThinking,
+  ]);
 
   const query = searchText.trim();
   const local = useMemo(() => searchLocal(query, 60), [query]);
@@ -204,7 +294,8 @@ export default function Command() {
     recents,
     aiTitle: ai.label ? `AI Suggestions · ${ai.label}` : "AI Suggestions",
   });
-  const waitingForAI = query.length >= MIN_QUERY_LENGTH && (loading || !aiIsCurrent);
+  const waitingForAI =
+    query.length >= MIN_QUERY_LENGTH && (loading || !aiIsCurrent);
 
   return (
     <Grid
@@ -241,7 +332,11 @@ export default function Command() {
               <Grid.Item
                 key={`${section.id}-${entry.emoji}`}
                 content={entry.emoji}
-                title={section.id === "ai" ? `${index + 1}. ${entry.name}` : entry.name}
+                title={
+                  section.id === "ai"
+                    ? `${index + 1}. ${entry.name}`
+                    : entry.name
+                }
                 keywords={entry.keywords}
                 actions={
                   <EmojiActions
@@ -269,11 +364,27 @@ function EmojiActions(props: {
   chooseModel: React.ReactNode;
 }) {
   const { entry, pasteFirst, onUse, onClearRecents, chooseModel } = props;
-  const paste = <Action.Paste key="paste" title="Paste Emoji" content={entry.emoji} onPaste={onUse} />;
-  const copy = <Action.CopyToClipboard key="copy" title="Copy Emoji" content={entry.emoji} onCopy={onUse} />;
+  const paste = (
+    <Action.Paste
+      key="paste"
+      title="Paste Emoji"
+      content={entry.emoji}
+      onPaste={onUse}
+    />
+  );
+  const copy = (
+    <Action.CopyToClipboard
+      key="copy"
+      title="Copy Emoji"
+      content={entry.emoji}
+      onCopy={onUse}
+    />
+  );
   return (
     <ActionPanel title={entry.name}>
-      <ActionPanel.Section>{pasteFirst ? [paste, copy] : [copy, paste]}</ActionPanel.Section>
+      <ActionPanel.Section>
+        {pasteFirst ? [paste, copy] : [copy, paste]}
+      </ActionPanel.Section>
       <ActionPanel.Section>{chooseModel}</ActionPanel.Section>
       <ActionPanel.Section>
         <Action.CopyToClipboard
@@ -287,7 +398,12 @@ function EmojiActions(props: {
           shortcut={{ modifiers: ["cmd", "opt"], key: "c" }}
         />
         {onClearRecents ? (
-          <Action title="Clear Recently Used" icon={Icon.Trash} style={Action.Style.Destructive} onAction={onClearRecents} />
+          <Action
+            title="Clear Recently Used"
+            icon={Icon.Trash}
+            style={Action.Style.Destructive}
+            onAction={onClearRecents}
+          />
         ) : null}
       </ActionPanel.Section>
     </ActionPanel>

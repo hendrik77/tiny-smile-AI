@@ -1,8 +1,11 @@
 import { readApiKey, readRequestHeaders } from "./keychain";
 import { parseSuggestions } from "./parse-suggestions";
 import { buildEmojiPrompt } from "./prompt";
-import { callApi, callCli, fastestEffort } from "./providers";
-import { listRouteChoices, PROVIDER_TITLES, readTinycastAISettings, resolveRoute } from "./tinycast-settings";
+import { formatDiagnostics, type DiagnosticsInput } from "./diagnostics";
+import { callApi, callCli, fastestEffort, findExecutable } from "./providers";
+import { listRouteChoices, readTinycastAISettingsDetailed, resolveRoute, routeLabel } from "./tinycast-settings";
+
+export { routeLabel };
 import type {
   AIRoute,
   EmojiEntry,
@@ -48,10 +51,21 @@ export interface SuggestOptions {
   minimizeThinking?: boolean;
 }
 
+export interface DiagnoseOptions {
+  bundleId: string;
+  override?: RouteOverride | null;
+  minimizeThinking?: boolean;
+  count: number;
+  extensionVersion: string;
+  lastError?: string;
+}
+
 export interface SuggestResult {
   emojis: EmojiEntry[];
   routeLabel: string;
 }
+
+type DetailedSettings = Awaited<ReturnType<typeof readTinycastAISettingsDetailed>>;
 
 interface PreparedRoute {
   key: string;
@@ -59,15 +73,7 @@ interface PreparedRoute {
   ask: (prompt: EmojiPrompt, minimizeThinking: boolean) => Promise<string>;
 }
 
-const CLI_TITLES = { claude: "Claude Code", codex: "Codex" } as const;
-
 const CACHE_VERSION = "v2";
-
-export function routeLabel(route: AIRoute): string {
-  if (route.kind === "cli") return `${CLI_TITLES[route.tool]} · ${route.model || "default model"}`;
-  const name = route.connection.name.trim() || PROVIDER_TITLES[route.connection.provider];
-  return `${name} · ${route.model}`;
-}
 
 /**
  * Returns a function that asks the AI for emojis. Tinycast's settings and the Keychain are read
@@ -76,18 +82,22 @@ export function routeLabel(route: AIRoute): string {
 export function createSuggester(deps: SuggesterDeps) {
   const memory = new Map<string, string>();
   const routes = new Map<string, Promise<PreparedRoute>>();
-  const settingsMemo = new Map<string, Promise<TinycastAISettings>>();
+  const settingsMemo = new Map<string, Promise<DetailedSettings>>();
   const secrets = new Map<string, Promise<{ apiKey: string | null; headers: Record<string, string> }>>();
 
   /** Memoized per bundle id; a failed read is retried on the next call. */
-  function settingsFor(bundleId: string): Promise<TinycastAISettings> {
+  function detailedFor(bundleId: string): Promise<DetailedSettings> {
     let pending = settingsMemo.get(bundleId);
     if (!pending) {
-      pending = readTinycastAISettings(bundleId, deps.exec);
+      pending = readTinycastAISettingsDetailed(bundleId, deps.exec);
       pending.catch(() => settingsMemo.delete(bundleId));
       settingsMemo.set(bundleId, pending);
     }
     return pending;
+  }
+
+  async function settingsFor(bundleId: string): Promise<TinycastAISettings> {
+    return (await detailedFor(bundleId)).settings;
   }
 
   function secretsFor(bundleId: string, connectionId: string) {
@@ -193,5 +203,53 @@ export function createSuggester(deps: SuggesterDeps) {
     return listRouteChoices(await settingsFor(bundleId));
   }
 
-  return Object.assign(suggest, { listRoutes });
+  /** A secret-free text report of what was read and decided. Never throws. */
+  async function diagnose(options: DiagnoseOptions): Promise<string> {
+    const minimizeThinking = options.minimizeThinking ?? true;
+    const override = options.override ?? null;
+    const base: DiagnosticsInput = {
+      extensionVersion: options.extensionVersion,
+      bundleId: options.bundleId,
+      override,
+      minimizeThinking,
+      resultCount: options.count,
+      lastError: options.lastError,
+      raycastAI: Boolean(deps.raycastAsk),
+    };
+    try {
+      if (deps.raycastAsk) return formatDiagnostics(base);
+      let detailed: DetailedSettings;
+      try {
+        detailed = await detailedFor(options.bundleId);
+      } catch (err) {
+        return formatDiagnostics({ ...base, settingsError: err instanceof Error ? err.message : String(err) });
+      }
+      const { settings, rawKeys } = detailed;
+      const resolution = resolveRoute(settings, override);
+      const input: DiagnosticsInput = { ...base, settings, rawKeys, resolution };
+      if (resolution.ok) {
+        const route = resolution.route;
+        if (route.kind === "cli") {
+          input.cli = { tool: route.tool, path: findExecutable(route.tool, deps.home, deps.exists) };
+        } else {
+          input.effort = minimizeThinking ? fastestEffort(route.connection, route.model) : null;
+          try {
+            const { apiKey, headers } = await secretsFor(options.bundleId, route.connection.id);
+            input.secrets = { apiKey: apiKey ? "found" : "missing", headerNames: Object.keys(headers) };
+          } catch (err) {
+            input.secrets = {
+              apiKey: "error",
+              headerNames: [],
+              error: err instanceof Error ? err.message : String(err),
+            };
+          }
+        }
+      }
+      return formatDiagnostics(input);
+    } catch (err) {
+      return formatDiagnostics({ ...base, settingsError: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  return Object.assign(suggest, { listRoutes, diagnose });
 }

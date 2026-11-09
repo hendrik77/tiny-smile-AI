@@ -9,6 +9,8 @@ const h = vi.hoisted(() => ({
   showToast: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
   pop: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
   listRoutes: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
+  diagnose: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
+  copy: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
 }));
 
 vi.mock("@raycast/api", async () => {
@@ -16,6 +18,7 @@ vi.mock("@raycast/api", async () => {
   const { vi } = await import("vitest");
   h.showToast = vi.fn();
   h.pop = vi.fn();
+  h.copy = vi.fn();
   const host = (tag: string) => (props: Record<string, unknown>) =>
     React.createElement(tag, props, props.children as React.ReactNode, props.actions as React.ReactNode);
   const Grid = Object.assign(host("grid"), {
@@ -54,6 +57,7 @@ vi.mock("@raycast/api", async () => {
     Icon: new Proxy({}, { get: (_t, k) => String(k) }),
     Toast: { Style: { Success: "success", Failure: "failure", Animated: "animated" } },
     showToast: h.showToast,
+    Clipboard: { copy: h.copy },
     getPreferenceValues: () => h.prefs,
     environment: { canAccess: () => false },
     AI: { ask: vi.fn() },
@@ -71,7 +75,8 @@ vi.mock("../src/lib/suggest", async (importActual) => {
   const { vi } = await import("vitest");
   h.suggest = vi.fn();
   h.listRoutes = vi.fn();
-  return { ...actual, createSuggester: () => Object.assign(h.suggest, { listRoutes: h.listRoutes }) };
+  h.diagnose = vi.fn();
+  return { ...actual, createSuggester: () => Object.assign(h.suggest, { listRoutes: h.listRoutes, diagnose: h.diagnose }) };
 });
 
 import Command from "../src/ai-emoji-search";
@@ -124,6 +129,10 @@ beforeEach(async () => {
   h.pop.mockReset();
   h.listRoutes.mockReset();
   h.listRoutes.mockResolvedValue(routeChoices);
+  h.diagnose.mockReset();
+  h.diagnose.mockResolvedValue("REPORT TEXT");
+  h.copy.mockReset();
+  h.copy.mockResolvedValue(undefined);
   delete h.prefs.minimizeThinking;
 });
 
@@ -276,6 +285,54 @@ describe("ai-emoji-search command", () => {
     await type("party");
     const item = renderer.root.findAllByType("grid-item" as never)[0];
     expect(item.findAllByType("action-push" as never)[0].props.shortcut).toEqual({ modifiers: ["cmd"], key: "m" });
+  });
+
+  describe("Copy Diagnostics", () => {
+    const diagAction = (root: ReactTestInstance) =>
+      root.findAllByType("action" as never).find((a) => a.props.title === "Copy Diagnostics");
+
+    it("is offered on the empty view and on items", async () => {
+      await mount();
+      const onEmpty = diagAction(empty());
+      expect(onEmpty?.props.icon).toBe("Bug");
+      expect(onEmpty?.props.shortcut).toEqual({ modifiers: ["cmd", "shift"], key: "d" });
+      await type("party");
+      const item = renderer.root.findAllByType("grid-item" as never)[0];
+      expect(diagAction(item)).toBeTruthy();
+    });
+
+    it("copies the report and shows a success toast", async () => {
+      await mount();
+      await act(async () => void (await diagAction(empty())!.props.onAction()));
+      expect(h.diagnose).toHaveBeenCalledTimes(1);
+      const opts = h.diagnose.mock.calls[0][0];
+      expect(opts).toMatchObject({
+        bundleId: "com.tinycast.app",
+        count: 24,
+        override: null,
+        minimizeThinking: true,
+        lastError: undefined,
+      });
+      expect(typeof opts.extensionVersion).toBe("string");
+      expect(opts.extensionVersion.length).toBeGreaterThan(0);
+      expect(h.copy).toHaveBeenCalledWith("REPORT TEXT");
+      expect(h.showToast).toHaveBeenLastCalledWith({
+        style: "success",
+        title: "Diagnostics copied",
+        message: "Paste them into a GitHub issue",
+      });
+    });
+
+    it("passes the last AI error", async () => {
+      h.suggest.mockRejectedValue(new Error("HTTP 401: unauthorized"));
+      await mount();
+      await type("party");
+      await advance(450);
+      await flush();
+      const item = renderer.root.findAllByType("grid-item" as never)[0];
+      await act(async () => void (await diagAction(item)!.props.onAction()));
+      expect(h.diagnose.mock.calls[0][0].lastError).toBe("HTTP 401: unauthorized");
+    });
   });
 
   it("switching the model in the picker re-asks with the new model and remembers it", async () => {

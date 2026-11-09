@@ -97,6 +97,9 @@ How long a search takes depends almost entirely on the model:
   `~/.claude/local`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.volta/bin`,
   `~/.npm-global/bin` and `/usr/bin`.
 
+- **Report a problem**: press **⌘⇧D** (Copy Diagnostics) in the grid and paste the result into a
+  GitHub issue. The report contains no API keys or header values, only names, hosts and model ids.
+
 ## Development
 
 ```bash

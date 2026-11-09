@@ -283,3 +283,92 @@ describe("routeLabel for CLI default models", () => {
     expect(routeLabel({ kind: "cli", tool: "claude", model: "opus" })).toBe("Claude Code · opus");
   });
 });
+
+describe("diagnose", () => {
+  const base = { bundleId: "com.tinycast.app", count: 24, extensionVersion: "1.0.0" };
+
+  it("reports an API route without leaking the key", async () => {
+    const d = deps();
+    const report = await createSuggester(d).diagnose(base);
+    expect(report).toContain("Tiny Smile AI diagnostics");
+    expect(report).toContain("Resolved route: Claude · claude-x");
+    expect(report).toContain("API key: found");
+    expect(report).toContain("aiConnections: data");
+    expect(report).toContain("https://api.anthropic.com");
+    expect(report).not.toContain("sk-test");
+    expect(report).toContain("Raycast AI: no");
+  });
+
+  it("reports a missing API key", async () => {
+    const report = await createSuggester(deps({ exec: makeExec(anthropicPlist, { key: null }) })).diagnose(base);
+    expect(report).toContain("API key: missing");
+  });
+
+  it("reports a Keychain failure as a line", async () => {
+    const exec = (async (file: string, args: string[]) => {
+      if (file.endsWith("security")) throw new Error("security: User interaction is not allowed.");
+      return { stdout: anthropicPlist, stderr: "" };
+    }) as ExecFn;
+    const report = await createSuggester(deps({ exec })).diagnose(base);
+    expect(report).toContain("API key: error");
+    expect(report).toContain("User interaction is not allowed");
+  });
+
+  it("includes the no-route reason", async () => {
+    const report = await createSuggester(deps({ exec: makeExec(plistWith({})) })).diagnose(base);
+    expect(report).toContain("No AI provider is set up");
+  });
+
+  it("never throws when settings are unreadable", async () => {
+    const exec = (async () => {
+      throw new Error("nope");
+    }) as unknown as ExecFn;
+    const report = await createSuggester(deps({ exec })).diagnose({ ...base, lastError: "boom" });
+    expect(report).toContain("Tinycast settings not found");
+    expect(report).toContain("Last error: boom");
+  });
+
+  it("shows the CLI executable path", async () => {
+    const exec = makeExec(plistWith({ aiDefaultModel: b64({ claude: { model: "sonnet" } }) }));
+    const report = await createSuggester(deps({ exec, exists: (p) => p === "/opt/homebrew/bin/claude" })).diagnose(base);
+    expect(report).toContain("Executable: /opt/homebrew/bin/claude");
+    const none = await createSuggester(deps({ exec })).diagnose(base);
+    expect(none).toContain("Executable: not found");
+  });
+
+  it("reports the effort that would be sent", async () => {
+    const plist = plistWith({
+      aiConnections: b64([
+        {
+          id: CONN_ID,
+          name: "Claude",
+          provider: "anthropic",
+          baseURL: "https://api.anthropic.com",
+          models: ["claude-x"],
+          reasoningOptions: { "claude-x": { efforts: ["default", "low", "high"] } },
+        },
+      ]),
+      aiDefaultModel: b64({ api: { connection: CONN_ID, model: "claude-x" } }),
+    });
+    const suggest = createSuggester(deps({ exec: makeExec(plist) }));
+    expect(await suggest.diagnose(base)).toContain("Effort sent: low");
+    expect(await suggest.diagnose({ ...base, minimizeThinking: false })).toContain("Effort sent: none");
+  });
+
+  it("reuses memoized settings and secrets", async () => {
+    const exec = makeExec(anthropicPlist);
+    const suggest = createSuggester(deps({ exec }));
+    await suggest("party", { bundleId: base.bundleId, count: 24 });
+    const before = exec.calls.length;
+    await suggest.diagnose(base);
+    expect(exec.calls.length).toBe(before);
+    expect(exec.calls.filter((c) => c[0].endsWith("defaults"))).toHaveLength(1);
+  });
+
+  it("reports Raycast AI and skips Tinycast reads", async () => {
+    const exec = makeExec(anthropicPlist);
+    const report = await createSuggester(deps({ exec, raycastAsk: async () => "🍕" })).diagnose(base);
+    expect(report).toContain("Raycast AI: yes");
+    expect(exec.calls).toHaveLength(0);
+  });
+});
