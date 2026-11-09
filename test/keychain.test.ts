@@ -11,8 +11,7 @@ function mock(result: { stdout?: string; error?: string }) {
   };
   return { exec, calls };
 }
-const NOT_FOUND =
-  "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.";
+const NOT_FOUND = "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.";
 
 describe("readApiKey", () => {
   it("runs security with exact argv and trims newline", async () => {
@@ -29,9 +28,9 @@ describe("readApiKey", () => {
     expect(await readApiKey("b", "U", mock({ stdout: "\n" }).exec)).toBeNull();
   });
   it("rethrows other failures with a clear message", async () => {
-    await expect(
-      readApiKey("b", "U", mock({ error: "User interaction is not allowed." }).exec),
-    ).rejects.toThrow(/Could not read API key from the keychain.*User interaction/);
+    await expect(readApiKey("b", "U", mock({ error: "User interaction is not allowed." }).exec)).rejects.toThrow(
+      /Could not read API key from the keychain.*User interaction/,
+    );
   });
 });
 

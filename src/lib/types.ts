@@ -49,13 +49,11 @@ export interface TinycastAISettings {
 
 /** What the extension will actually call. */
 export type AIRoute =
-  | { kind: "api"; connection: AIConnection; model: string }
-  | { kind: "cli"; tool: "claude" | "codex"; model: string };
+  { kind: "api"; connection: AIConnection; model: string } | { kind: "cli"; tool: "claude" | "codex"; model: string };
 
 /** A route the user picked in the extension, overriding Tinycast's default model. */
 export type RouteOverride =
-  | { kind: "api"; connection: string; model: string }
-  | { kind: "cli"; tool: "claude" | "codex"; model: string };
+  { kind: "api"; connection: string; model: string } | { kind: "cli"; tool: "claude" | "codex"; model: string };
 
 /** One entry of the in-command model picker. */
 export interface RouteChoice {

@@ -1,6 +1,7 @@
 import { parsePlistXML } from "./plist";
 import type {
   AIConnection,
+  AIRoute,
   ExecFn,
   ModelSelection,
   ProviderKind,
@@ -21,6 +22,12 @@ export const PROVIDER_TITLES: Record<ProviderKind, string> = {
 };
 
 const CLI_TITLES = { claude: "Claude Code", codex: "Codex" } as const;
+
+export function routeLabel(route: AIRoute): string {
+  if (route.kind === "cli") return `${CLI_TITLES[route.tool]} · ${route.model || "default model"}`;
+  const name = route.connection.name.trim() || PROVIDER_TITLES[route.connection.provider];
+  return `${name} · ${route.model}`;
+}
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -114,14 +121,41 @@ export function decodeAISettings(plist: unknown): TinycastAISettings {
   };
 }
 
+function plistType(v: unknown): string {
+  if (v instanceof Uint8Array) return "data";
+  if (Array.isArray(v)) return "array";
+  if (isObj(v)) return "dict";
+  if (typeof v === "string") return "string";
+  if (typeof v === "boolean") return "boolean";
+  if (typeof v === "number") return Number.isInteger(v) ? "integer" : "real";
+  return "unknown";
+}
+
+/** Every raw preference key starting with "ai" and its plist type, sorted by name. */
+export function listRawAIKeys(plist: unknown): { name: string; type: string }[] {
+  if (!isObj(plist)) return [];
+  return Object.keys(plist)
+    .filter((k) => k.startsWith("ai"))
+    .sort()
+    .map((name) => ({ name, type: plistType(plist[name]) }));
+}
+
 export async function readTinycastAISettings(bundleId: string, exec: ExecFn): Promise<TinycastAISettings> {
+  return (await readTinycastAISettingsDetailed(bundleId, exec)).settings;
+}
+
+export async function readTinycastAISettingsDetailed(
+  bundleId: string,
+  exec: ExecFn,
+): Promise<{ settings: TinycastAISettings; rawKeys: { name: string; type: string }[] }> {
   let stdout: string;
   try {
     ({ stdout } = await exec("/usr/bin/defaults", ["export", bundleId, "-"]));
   } catch {
     throw new Error(`Tinycast settings not found for ${bundleId}. Is Tinycast installed?`);
   }
-  return decodeAISettings(parsePlistXML(stdout));
+  const plist = parsePlistXML(stdout);
+  return { settings: decodeAISettings(plist), rawKeys: listRawAIKeys(plist) };
 }
 
 const SETUP_HINT = "Add an API connection in Tinycast → Settings → AI → Providers.";
@@ -144,7 +178,11 @@ export function resolveRoute(settings: TinycastAISettings, override?: RouteOverr
   if (override?.kind === "api") {
     const c = connections.find((x) => x.id === override.connection);
     if (c && enabled(`api:${c.id}`)) return { ok: true, route: { kind: "api", connection: c, model: override.model } };
-  } else if (override?.kind === "cli" && enabled(override.tool) && (on.includes(override.tool) || def?.kind === override.tool)) {
+  } else if (
+    override?.kind === "cli" &&
+    enabled(override.tool) &&
+    (on.includes(override.tool) || def?.kind === override.tool)
+  ) {
     return { ok: true, route: { kind: "cli", tool: override.tool, model: override.model } };
   }
 

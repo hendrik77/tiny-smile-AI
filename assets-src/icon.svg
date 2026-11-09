@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C5CFF"/>
+      <stop offset="1" stop-color="#2B2E8F"/>
+    </linearGradient>
+    <radialGradient id="face" cx="0.38" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#FFE580"/>
+      <stop offset="0.6" stop-color="#FFC531"/>
+      <stop offset="1" stop-color="#FF9F1C"/>
+    </radialGradient>
+  </defs>
+  <!-- squircle-like background, radius 22% -->
+  <rect x="16" y="16" width="480" height="480" rx="106" fill="url(#bg)"/>
+  <!-- face -->
+  <circle cx="232" cy="280" r="158" fill="url(#face)"/>
+  <!-- eyes -->
+  <ellipse cx="180" cy="254" rx="24" ry="33" fill="#3A1F0A"/>
+  <ellipse cx="284" cy="254" rx="24" ry="33" fill="#3A1F0A"/>
+  <!-- smile -->
+  <path d="M162 326 Q232 396 302 326" fill="none" stroke="#3A1F0A" stroke-width="24" stroke-linecap="round"/>
+  <!-- cheeks -->
+  <circle cx="132" cy="312" r="17" fill="#FF7A59" opacity="0.55"/>
+  <circle cx="332" cy="312" r="17" fill="#FF7A59" opacity="0.55"/>
+  <!-- AI sparkle (four-point star) -->
+  <path d="M388 64 Q404 120 460 136 Q404 152 388 208 Q372 152 316 136 Q372 120 388 64 Z" fill="#FFFFFF"/>
+</svg>

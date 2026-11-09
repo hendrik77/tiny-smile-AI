@@ -43,14 +43,14 @@ function makeExec(plist: string, opts: { key?: string | null } = {}): ExecFn & {
 
 function makeFetch(text: string, status = 200): FetchFn & { mock: ReturnType<typeof vi.fn> } {
   const mock = vi.fn(async () => ({ ok: status >= 200 && status < 300, status, text: async () => text }));
-  const fn = ((url: string, init: Parameters<FetchFn>[1]) =>
-    (mock as unknown as FetchFn)(url, init)) as FetchFn & { mock: typeof mock };
+  const fn = ((url: string, init: Parameters<FetchFn>[1]) => (mock as unknown as FetchFn)(url, init)) as FetchFn & {
+    mock: typeof mock;
+  };
   fn.mock = mock;
   return fn;
 }
 
-const anthropicAnswer = (answer: string) =>
-  JSON.stringify({ content: [{ type: "text", text: answer }] });
+const anthropicAnswer = (answer: string) => JSON.stringify({ content: [{ type: "text", text: answer }] });
 
 function deps(over: Partial<SuggesterDeps> = {}): SuggesterDeps {
   return {
@@ -116,9 +116,7 @@ describe("createSuggester", () => {
   it("uses the claude CLI route", async () => {
     const plist = plistWith({ aiDefaultModel: b64({ claude: { model: "sonnet" } }) });
     const exec = makeExec(plist);
-    const suggest = createSuggester(
-      deps({ exec, exists: (p) => p === "/opt/homebrew/bin/claude" }),
-    );
+    const suggest = createSuggester(deps({ exec, exists: (p) => p === "/opt/homebrew/bin/claude" }));
     const result = await suggest("party", { bundleId: "com.tinycast.app", count: 24 });
     expect(result.emojis.map((e) => e.emoji)).toEqual(["🎉", "🥳"]);
     expect(result.routeLabel).toBe("Claude Code · sonnet");
@@ -150,9 +148,7 @@ describe("createSuggester", () => {
 
   it("fails clearly when the answer holds no known emoji", async () => {
     const suggest = createSuggester(deps({ fetch: makeFetch(anthropicAnswer("I cannot help with that.")) }));
-    await expect(suggest("x", { bundleId: "com.tinycast.app", count: 24 })).rejects.toThrow(
-      /didn't suggest any emoji/,
-    );
+    await expect(suggest("x", { bundleId: "com.tinycast.app", count: 24 })).rejects.toThrow(/didn't suggest any emoji/);
   });
 
   it("surfaces HTTP errors and does not cache them", async () => {
@@ -195,9 +191,10 @@ describe("model override, listRoutes and minimizeThinking", () => {
   });
   const opts = { bundleId: "com.tinycast.app", count: 24 };
   const sent = (d: SuggesterDeps) =>
-    (d.fetch as unknown as { mock: ReturnType<typeof vi.fn> }).mock.mock.calls.map(
-      (c) => ({ url: c[0] as string, body: JSON.parse(c[1].body) }),
-    );
+    (d.fetch as unknown as { mock: ReturnType<typeof vi.fn> }).mock.mock.calls.map((c) => ({
+      url: c[0] as string,
+      body: JSON.parse(c[1].body),
+    }));
 
   it("override changes the route and label", async () => {
     const d = deps({
@@ -281,5 +278,96 @@ describe("routeLabel for CLI default models", () => {
     expect(routeLabel({ kind: "cli", tool: "claude", model: "" })).toBe("Claude Code · default model");
     expect(routeLabel({ kind: "cli", tool: "codex", model: "" })).toBe("Codex · default model");
     expect(routeLabel({ kind: "cli", tool: "claude", model: "opus" })).toBe("Claude Code · opus");
+  });
+});
+
+describe("diagnose", () => {
+  const base = { bundleId: "com.tinycast.app", count: 24, extensionVersion: "1.0.0" };
+
+  it("reports an API route without leaking the key", async () => {
+    const d = deps();
+    const report = await createSuggester(d).diagnose(base);
+    expect(report).toContain("Tiny Smile AI diagnostics");
+    expect(report).toContain("Resolved route: Claude · claude-x");
+    expect(report).toContain("API key: found");
+    expect(report).toContain("aiConnections: data");
+    expect(report).toContain("https://api.anthropic.com");
+    expect(report).not.toContain("sk-test");
+    expect(report).toContain("Raycast AI: no");
+  });
+
+  it("reports a missing API key", async () => {
+    const report = await createSuggester(deps({ exec: makeExec(anthropicPlist, { key: null }) })).diagnose(base);
+    expect(report).toContain("API key: missing");
+  });
+
+  it("reports a Keychain failure as a line", async () => {
+    const exec = (async (file: string) => {
+      if (file.endsWith("security")) throw new Error("security: User interaction is not allowed.");
+      return { stdout: anthropicPlist, stderr: "" };
+    }) as ExecFn;
+    const report = await createSuggester(deps({ exec })).diagnose(base);
+    expect(report).toContain("API key: error");
+    expect(report).toContain("User interaction is not allowed");
+  });
+
+  it("includes the no-route reason", async () => {
+    const report = await createSuggester(deps({ exec: makeExec(plistWith({})) })).diagnose(base);
+    expect(report).toContain("No AI provider is set up");
+  });
+
+  it("never throws when settings are unreadable", async () => {
+    const exec = (async () => {
+      throw new Error("nope");
+    }) as unknown as ExecFn;
+    const report = await createSuggester(deps({ exec })).diagnose({ ...base, lastError: "boom" });
+    expect(report).toContain("Tinycast settings not found");
+    expect(report).toContain("Last error: boom");
+  });
+
+  it("shows the CLI executable path", async () => {
+    const exec = makeExec(plistWith({ aiDefaultModel: b64({ claude: { model: "sonnet" } }) }));
+    const report = await createSuggester(deps({ exec, exists: (p) => p === "/opt/homebrew/bin/claude" })).diagnose(
+      base,
+    );
+    expect(report).toContain("Executable: /opt/homebrew/bin/claude");
+    const none = await createSuggester(deps({ exec })).diagnose(base);
+    expect(none).toContain("Executable: not found");
+  });
+
+  it("reports the effort that would be sent", async () => {
+    const plist = plistWith({
+      aiConnections: b64([
+        {
+          id: CONN_ID,
+          name: "Claude",
+          provider: "anthropic",
+          baseURL: "https://api.anthropic.com",
+          models: ["claude-x"],
+          reasoningOptions: { "claude-x": { efforts: ["default", "low", "high"] } },
+        },
+      ]),
+      aiDefaultModel: b64({ api: { connection: CONN_ID, model: "claude-x" } }),
+    });
+    const suggest = createSuggester(deps({ exec: makeExec(plist) }));
+    expect(await suggest.diagnose(base)).toContain("Effort sent: low");
+    expect(await suggest.diagnose({ ...base, minimizeThinking: false })).toContain("Effort sent: none");
+  });
+
+  it("reuses memoized settings and secrets", async () => {
+    const exec = makeExec(anthropicPlist);
+    const suggest = createSuggester(deps({ exec }));
+    await suggest("party", { bundleId: base.bundleId, count: 24 });
+    const before = exec.calls.length;
+    await suggest.diagnose(base);
+    expect(exec.calls.length).toBe(before);
+    expect(exec.calls.filter((c) => c[0].endsWith("defaults"))).toHaveLength(1);
+  });
+
+  it("reports Raycast AI and skips Tinycast reads", async () => {
+    const exec = makeExec(anthropicPlist);
+    const report = await createSuggester(deps({ exec, raycastAsk: async () => "🍕" })).diagnose(base);
+    expect(report).toContain("Raycast AI: yes");
+    expect(exec.calls).toHaveLength(0);
   });
 });

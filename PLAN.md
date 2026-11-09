@@ -27,13 +27,13 @@ Tinycast runs Raycast-API extensions in an embedded runtime, but `AI.ask` there 
 (`Scripts/raycast-runtime/src/api/index.js` in Tinycast). So the extension reads Tinycast's own
 AI configuration and calls the model itself:
 
-| What | Where Tinycast keeps it | How the extension reads it |
-| --- | --- | --- |
-| Connections (`[AIConnection]` JSON: id, name, provider, baseURL, models) | `UserDefaults` key `aiConnections` (Data) | `defaults export <bundle id> -` → plist XML → base64 → JSON |
-| Default model (`AIModelSelection` JSON, e.g. `{"api":{"connection":UUID,"model":"…"}}`) | `aiDefaultModel` (Data) | same |
-| Routes switched off | `aiDisabledRoutes` (`["api:<UUID>", "claude", …]`) | same |
-| API keys | Keychain generic password, service `<bundle id>.ai-api-keys`, account = connection UUID | `security find-generic-password -s … -a … -w` |
-| Custom request headers | Keychain `<bundle id>.ai-request-headers` (JSON object) | same |
+| What                                                                                    | Where Tinycast keeps it                                                                 | How the extension reads it                                  |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Connections (`[AIConnection]` JSON: id, name, provider, baseURL, models)                | `UserDefaults` key `aiConnections` (Data)                                               | `defaults export <bundle id> -` → plist XML → base64 → JSON |
+| Default model (`AIModelSelection` JSON, e.g. `{"api":{"connection":UUID,"model":"…"}}`) | `aiDefaultModel` (Data)                                                                 | same                                                        |
+| Routes switched off                                                                     | `aiDisabledRoutes` (`["api:<UUID>", "claude", …]`)                                      | same                                                        |
+| API keys                                                                                | Keychain generic password, service `<bundle id>.ai-api-keys`, account = connection UUID | `security find-generic-password -s … -a … -w`               |
+| Custom request headers                                                                  | Keychain `<bundle id>.ai-request-headers` (JSON object)                                 | same                                                        |
 
 Bundle id: `com.tinycast.app` (stable), `com.tinycast.app.beta`, `com.tinycast.app.dev` — a
 preference picks the channel.
@@ -100,3 +100,28 @@ whole extension is built with `ray build -e dist` and booted in Tinycast's own r
 - The bundle boots in Tinycast's runtime harness and renders the grid (recents / name matches)
   and, with a stubbed AI response, the AI Suggestions section.
 - README explains install, how AI settings are reused, the Keychain prompt, and limitations.
+
+## Project basics (review item 4)
+
+Goal: every pull request is checked automatically, the code has one enforced style, and the
+extension has a real icon.
+
+1. **Lint and format**
+   - ESLint (flat config, `@raycast/eslint-config`) and Prettier (`printWidth` 120, matching the
+     existing code).
+   - Scripts: `npm run lint` (eslint + `prettier --check`), `npm run format`, and `npm run check`
+     (lint, typecheck, test, build in that order).
+   - Fix every finding; no rule is switched off to get green, except for generated files
+     (`raycast-env.d.ts`, `dist/`).
+2. **CI**
+   - `.github/workflows/ci.yml`: on pull requests and pushes to `main`, Node 22, `npm ci`, then
+     lint, typecheck, test, build. One job, npm cache, read-only permissions, cancel superseded runs.
+3. **Icon**
+   - `assets/icon.png`, 512×512, transparent background, readable at 32 px: a smiling emoji face
+     with an AI sparkle. Source kept as `assets-src/icon.svg`, rendered by `scripts/render-icon.mjs`
+     (Playwright Chromium, already on the dev machine), so it can be regenerated.
+4. **Housekeeping**
+   - `CHANGELOG.md` with the history so far (1.0.0).
+   - README Development section lists the new scripts.
+
+Done when `npm run check` is green locally and the CI workflow file is on the branch.

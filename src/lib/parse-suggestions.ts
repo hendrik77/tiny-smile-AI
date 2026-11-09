@@ -73,6 +73,11 @@ function* graphemes(text: string): Iterable<string> {
   else yield* Array.from(text);
 }
 
+function isAscii(text: string): boolean {
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) > 0x7f) return false;
+  return true;
+}
+
 export function parseSuggestions(text: string, limit: number): EmojiEntry[] {
   if (limit <= 0 || !text) return [];
   const arrays = findArrays(text);
@@ -81,6 +86,6 @@ export function parseSuggestions(text: string, limit: number): EmojiEntry[] {
     if (result.length > 0) return result;
   }
   const scanned: (EmojiEntry | undefined)[] = [];
-  for (const g of graphemes(text)) if (!/^[\x00-\x7f]*$/.test(g)) scanned.push(findEmoji(g));
+  for (const g of graphemes(text)) if (!isAscii(g)) scanned.push(findEmoji(g));
   return dedupe(scanned, limit);
 }

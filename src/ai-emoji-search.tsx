@@ -3,8 +3,10 @@ import {
   Action,
   ActionPanel,
   Cache,
+  Clipboard,
   Grid,
   Icon,
+  Keyboard,
   LocalStorage,
   Toast,
   environment,
@@ -20,6 +22,7 @@ import { searchLocal } from "./lib/local-search";
 import { buildSections } from "./lib/sections";
 import { NoRouteError, createSuggester, type SuggesterDeps } from "./lib/suggest";
 import type { EmojiEntry, FetchFn, RouteChoice, RouteOverride } from "./lib/types";
+import { version as extensionVersion } from "./lib/version";
 import { ModelPicker } from "./model-picker";
 
 const DEBOUNCE_MS = 450;
@@ -71,7 +74,9 @@ function useRecents() {
       try {
         const list: unknown = raw ? JSON.parse(raw) : [];
         if (Array.isArray(list)) {
-          setRecents(list.map((e) => (typeof e === "string" ? findEmoji(e) : undefined)).filter(Boolean) as EmojiEntry[]);
+          setRecents(
+            list.map((e) => (typeof e === "string" ? findEmoji(e) : undefined)).filter(Boolean) as EmojiEntry[],
+          );
         }
       } catch {
         // A garbled list is simply forgotten.
@@ -102,7 +107,11 @@ function parseOverride(raw: string | undefined): RouteOverride | null {
     if (value?.kind === "api" && typeof value.connection === "string" && typeof value.model === "string") {
       return { kind: "api", connection: value.connection, model: value.model };
     }
-    if (value?.kind === "cli" && (value.tool === "claude" || value.tool === "codex") && typeof value.model === "string") {
+    if (
+      value?.kind === "cli" &&
+      (value.tool === "claude" || value.tool === "codex") &&
+      typeof value.model === "string"
+    ) {
       return { kind: "cli", tool: value.tool, model: value.model };
     }
   } catch {
@@ -113,7 +122,10 @@ function parseOverride(raw: string | undefined): RouteOverride | null {
 
 /** The model picked for emoji search; `null` follows Tinycast's default. `ready` is false until loaded. */
 function useModelOverride() {
-  const [state, setState] = useState<{ ready: boolean; override: RouteOverride | null }>({
+  const [state, setState] = useState<{
+    ready: boolean;
+    override: RouteOverride | null;
+  }>({
     ready: false,
     override: null,
   });
@@ -152,13 +164,38 @@ export default function Command() {
 
   const loadChoices = (): Promise<RouteChoice[]> =>
     suggester.current?.listRoutes ? suggester.current.listRoutes(bundleId) : Promise.resolve([]);
+  const lastError = useRef<string | undefined>(undefined);
+  const copyDiagnostics = async () => {
+    const report = await suggester.current!.diagnose({
+      bundleId,
+      override: model.override,
+      minimizeThinking,
+      count,
+      extensionVersion,
+      lastError: lastError.current,
+    });
+    await Clipboard.copy(report);
+    await showToast({
+      style: Toast.Style.Success,
+      title: "Diagnostics copied",
+      message: "Paste them into a GitHub issue",
+    });
+  };
   const chooseModel = (
-    <Action.Push
-      title="Choose AI Model…"
-      icon={Icon.Stars}
-      shortcut={{ modifiers: ["cmd"], key: "m" }}
-      target={<ModelPicker loadChoices={loadChoices} current={model.override} onChoose={model.choose} />}
-    />
+    <>
+      <Action.Push
+        title="Choose AI Model…"
+        icon={Icon.Stars}
+        shortcut={{ modifiers: ["cmd"], key: "m" }}
+        target={<ModelPicker loadChoices={loadChoices} current={model.override} onChoose={model.choose} />}
+      />
+      <Action
+        title="Copy Diagnostics"
+        icon={Icon.Bug}
+        shortcut={{ modifiers: ["cmd", "shift"], key: "d" }}
+        onAction={copyDiagnostics}
+      />
+    </>
   );
 
   useEffect(() => {
@@ -170,13 +207,26 @@ export default function Command() {
     }
     let cancelled = false;
     setLoading(true);
-    suggester.current!(debouncedQuery, { bundleId, count, override: model.override, minimizeThinking })
+    suggester.current!(debouncedQuery, {
+      bundleId,
+      count,
+      override: model.override,
+      minimizeThinking,
+    })
       .then((result) => {
-        if (!cancelled) setAI({ query: debouncedQuery, modelKey, emojis: result.emojis, label: result.routeLabel });
+        if (cancelled) return;
+        lastError.current = undefined;
+        setAI({
+          query: debouncedQuery,
+          modelKey,
+          emojis: result.emojis,
+          label: result.routeLabel,
+        });
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : String(error);
+        lastError.current = message;
         setAI({ query: debouncedQuery, modelKey, emojis: [], error: message });
         showToast({
           style: Toast.Style.Failure,
@@ -276,18 +326,19 @@ function EmojiActions(props: {
       <ActionPanel.Section>{pasteFirst ? [paste, copy] : [copy, paste]}</ActionPanel.Section>
       <ActionPanel.Section>{chooseModel}</ActionPanel.Section>
       <ActionPanel.Section>
-        <Action.CopyToClipboard
-          title="Copy Name"
-          content={entry.name}
-          shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
-        />
+        <Action.CopyToClipboard title="Copy Name" content={entry.name} shortcut={Keyboard.Shortcut.Common.CopyName} />
         <Action.CopyToClipboard
           title="Copy Shortcode"
           content={`:${entry.slug}:`}
-          shortcut={{ modifiers: ["cmd", "opt"], key: "c" }}
+          shortcut={{ modifiers: ["cmd", "opt"], key: "s" }}
         />
         {onClearRecents ? (
-          <Action title="Clear Recently Used" icon={Icon.Trash} style={Action.Style.Destructive} onAction={onClearRecents} />
+          <Action
+            title="Clear Recently Used"
+            icon={Icon.Trash}
+            style={Action.Style.Destructive}
+            onAction={onClearRecents}
+          />
         ) : null}
       </ActionPanel.Section>
     </ActionPanel>

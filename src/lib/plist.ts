@@ -15,9 +15,7 @@ function decodeEntities(s: string): string {
 }
 
 type Token =
-  | { t: "open"; name: string; selfClosing: boolean }
-  | { t: "close"; name: string }
-  | { t: "text"; text: string };
+  { t: "open"; name: string; selfClosing: boolean } | { t: "close"; name: string } | { t: "text"; text: string };
 
 function tokenize(xml: string): Token[] {
   const tokens: Token[] = [];

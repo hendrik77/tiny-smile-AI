@@ -8,11 +8,7 @@ describe("execFileAsync", () => {
     expect(r.stderr.trim()).toBe("warn");
   });
   it("writes input to stdin", async () => {
-    const r = await execFileAsync(
-      process.execPath,
-      ["-e", "process.stdin.pipe(process.stdout)"],
-      { input: "piped" },
-    );
+    const r = await execFileAsync(process.execPath, ["-e", "process.stdin.pipe(process.stdout)"], { input: "piped" });
     expect(r.stdout).toBe("piped");
   });
   it("passes env merged over process.env", async () => {
@@ -26,9 +22,9 @@ describe("execFileAsync", () => {
     expect(r.stdout.trim()).toBe("yes|base");
   });
   it("rejects with stderr on non-zero exit", async () => {
-    await expect(
-      execFileAsync(process.execPath, ["-e", "console.error('boom');process.exit(3)"]),
-    ).rejects.toThrow(/boom/);
+    await expect(execFileAsync(process.execPath, ["-e", "console.error('boom');process.exit(3)"])).rejects.toThrow(
+      /boom/,
+    );
   });
   it("rejects when the binary is missing", async () => {
     await expect(execFileAsync("/nonexistent/bin", [])).rejects.toThrow();
