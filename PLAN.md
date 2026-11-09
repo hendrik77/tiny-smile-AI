@@ -161,3 +161,37 @@ any of them and break the extension without warning.
 - Skin-tone preference: the prompt currently forbids skin tones; apply the chosen tone to emojis
   that support one.
 - Rank emojis that are picked often higher, in both the AI and the name sections.
+
+### Emoji for the selected text
+
+A second command that reads the text selected in the frontmost app (`getSelectedText`, which
+Tinycast's runtime supports), asks the AI for fitting emojis and opens the grid already filled.
+With nothing selected it says so and opens the normal search.
+
+### Search straight from the launcher
+
+Give the command a text argument, so `emoji finally friday` typed in Tinycast's main bar lands
+directly in the results. Tinycast passes `props.arguments` to extension commands. The argument is
+optional; without it the command opens as it does today.
+
+### Name search in the user's language
+
+The "Matching Names" section only knows English names and keywords, so a German query finds
+nothing until the AI answers. Add keyword sets for other languages (CLDR annotations), starting
+with German, chosen from the system language, with English always searched as well.
+
+### Pick several emojis in one go
+
+An "Add to Selection" action that puts the emoji in a small tray and keeps the grid open, plus
+"Paste Selection" and "Copy Selection" for the whole sequence. A single pick keeps working as
+it does today.
+
+### Built-in answers for common searches
+
+Ship a table of a few hundred frequent searches ("happy", "thanks", "birthday", "sorry") with
+emojis prepared in advance. They appear instantly, cost nothing and work with no AI set up; the
+AI still answers everything else. The table is generated once with a model by a script and
+checked into the repo, so it can be regenerated.
+
+Suggested order: launcher argument and selected text first (small, and they remove typing from
+the most frequent uses); the built-in table last (most work).
