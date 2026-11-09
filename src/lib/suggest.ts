@@ -1,9 +1,18 @@
 import { readApiKey, readRequestHeaders } from "./keychain";
 import { parseSuggestions } from "./parse-suggestions";
 import { buildEmojiPrompt } from "./prompt";
-import { callApi, callCli } from "./providers";
-import { readTinycastAISettings, resolveRoute } from "./tinycast-settings";
-import type { AIRoute, EmojiEntry, EmojiPrompt, ExecFn, FetchFn, ProviderKind } from "./types";
+import { callApi, callCli, fastestEffort } from "./providers";
+import { listRouteChoices, PROVIDER_TITLES, readTinycastAISettings, resolveRoute } from "./tinycast-settings";
+import type {
+  AIRoute,
+  EmojiEntry,
+  EmojiPrompt,
+  ExecFn,
+  FetchFn,
+  RouteChoice,
+  RouteOverride,
+  TinycastAISettings,
+} from "./types";
 import { findEmoji } from "./emoji-data";
 
 /** Thrown when Tinycast has no AI route the extension can use; the message says what to set up. */
@@ -33,6 +42,10 @@ export interface SuggesterDeps {
 export interface SuggestOptions {
   bundleId: string;
   count: number;
+  /** A model picked in the extension, overriding Tinycast's default. */
+  override?: RouteOverride | null;
+  /** Ask thinking models to think as little as possible (default true). */
+  minimizeThinking?: boolean;
 }
 
 export interface SuggestResult {
@@ -43,20 +56,12 @@ export interface SuggestResult {
 interface PreparedRoute {
   key: string;
   label: string;
-  ask: (prompt: EmojiPrompt) => Promise<string>;
+  ask: (prompt: EmojiPrompt, minimizeThinking: boolean) => Promise<string>;
 }
-
-const PROVIDER_TITLES: Record<ProviderKind, string> = {
-  openAI: "OpenAI API",
-  anthropic: "Anthropic Claude",
-  gemini: "Google Gemini",
-  openRouter: "OpenRouter",
-  openAICompatible: "OpenAI Compatible",
-};
 
 const CLI_TITLES = { claude: "Claude Code", codex: "Codex" } as const;
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 
 export function routeLabel(route: AIRoute): string {
   if (route.kind === "cli") return `${CLI_TITLES[route.tool]} · ${route.model}`;
@@ -71,8 +76,35 @@ export function routeLabel(route: AIRoute): string {
 export function createSuggester(deps: SuggesterDeps) {
   const memory = new Map<string, string>();
   const routes = new Map<string, Promise<PreparedRoute>>();
+  const settingsMemo = new Map<string, Promise<TinycastAISettings>>();
+  const secrets = new Map<string, Promise<{ apiKey: string | null; headers: Record<string, string> }>>();
 
-  async function prepare(bundleId: string): Promise<PreparedRoute> {
+  /** Memoized per bundle id; a failed read is retried on the next call. */
+  function settingsFor(bundleId: string): Promise<TinycastAISettings> {
+    let pending = settingsMemo.get(bundleId);
+    if (!pending) {
+      pending = readTinycastAISettings(bundleId, deps.exec);
+      pending.catch(() => settingsMemo.delete(bundleId));
+      settingsMemo.set(bundleId, pending);
+    }
+    return pending;
+  }
+
+  function secretsFor(bundleId: string, connectionId: string) {
+    const key = `${bundleId}|${connectionId}`;
+    let pending = secrets.get(key);
+    if (!pending) {
+      pending = Promise.all([
+        readApiKey(bundleId, connectionId, deps.exec),
+        readRequestHeaders(bundleId, connectionId, deps.exec),
+      ]).then(([apiKey, headers]) => ({ apiKey, headers }));
+      pending.catch(() => secrets.delete(key));
+      secrets.set(key, pending);
+    }
+    return pending;
+  }
+
+  async function prepare(bundleId: string, override: RouteOverride | null): Promise<PreparedRoute> {
     if (deps.raycastAsk) {
       const ask = deps.raycastAsk;
       return {
@@ -81,8 +113,8 @@ export function createSuggester(deps: SuggesterDeps) {
         ask: (prompt) => ask(`${prompt.system}\n\n${prompt.user}`),
       };
     }
-    const settings = await readTinycastAISettings(bundleId, deps.exec);
-    const resolution = resolveRoute(settings);
+    const settings = await settingsFor(bundleId);
+    const resolution = resolveRoute(settings, override);
     if (!resolution.ok) throw new NoRouteError(resolution.reason);
     const route = resolution.route;
     const label = routeLabel(route);
@@ -97,24 +129,23 @@ export function createSuggester(deps: SuggesterDeps) {
     }
 
     const { connection, model } = route;
-    const [apiKey, headers] = await Promise.all([
-      readApiKey(bundleId, connection.id, deps.exec),
-      readRequestHeaders(bundleId, connection.id, deps.exec),
-    ]);
+    const { apiKey, headers } = await secretsFor(bundleId, connection.id);
     return {
       key: `api:${connection.id}:${model}`,
       label,
-      ask: (prompt) => callApi(connection, model, prompt, apiKey, headers, deps.fetch),
+      ask: (prompt, minimize) =>
+        callApi(connection, model, prompt, apiKey, headers, deps.fetch, minimize ? fastestEffort(connection, model) : null),
     };
   }
 
-  function preparedRoute(bundleId: string): Promise<PreparedRoute> {
-    let pending = routes.get(bundleId);
+  function preparedRoute(bundleId: string, override: RouteOverride | null): Promise<PreparedRoute> {
+    const memoKey = `${bundleId}|${override ? JSON.stringify(override) : ""}`;
+    let pending = routes.get(memoKey);
     if (!pending) {
-      pending = prepare(bundleId);
+      pending = prepare(bundleId, override);
       // A failed lookup (e.g. Keychain access denied) is retried on the next search.
-      pending.catch(() => routes.delete(bundleId));
-      routes.set(bundleId, pending);
+      pending.catch(() => routes.delete(memoKey));
+      routes.set(memoKey, pending);
     }
     return pending;
   }
@@ -138,20 +169,29 @@ export function createSuggester(deps: SuggesterDeps) {
     deps.cache?.set(key, raw);
   }
 
-  return async function suggest(query: string, options: SuggestOptions): Promise<SuggestResult> {
+  async function suggest(query: string, options: SuggestOptions): Promise<SuggestResult> {
     const normalized = query.trim().replace(/\s+/g, " ").toLowerCase();
     if (!normalized) throw new Error("Type something to get emoji suggestions.");
     const count = Math.max(1, Math.min(100, Math.floor(options.count)));
 
-    const route = await preparedRoute(options.bundleId);
-    const cacheKey = `${CACHE_VERSION}|${route.key}|${count}|${normalized}`;
+    const route = await preparedRoute(options.bundleId, options.override ?? null);
+    const minimize = options.minimizeThinking ?? true;
+    const cacheKey = `${CACHE_VERSION}|${route.key}|${minimize ? "min" : "full"}|${count}|${normalized}`;
     const cached = readCache(cacheKey);
     if (cached && cached.length > 0) return { emojis: cached, routeLabel: route.label };
 
-    const answer = await route.ask(buildEmojiPrompt(query.trim(), count));
+    const answer = await route.ask(buildEmojiPrompt(query.trim(), count), minimize);
     const emojis = parseSuggestions(answer, count);
     if (emojis.length === 0) throw new Error("The AI didn't suggest any emoji for this search.");
     writeCache(cacheKey, emojis);
     return { emojis, routeLabel: route.label };
-  };
+  }
+
+  /** The models the user can pick from; empty inside Raycast, where the model is fixed. */
+  async function listRoutes(bundleId: string): Promise<RouteChoice[]> {
+    if (deps.raycastAsk) return [];
+    return listRouteChoices(await settingsFor(bundleId));
+  }
+
+  return Object.assign(suggest, { listRoutes });
 }

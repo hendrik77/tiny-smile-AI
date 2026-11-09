@@ -17,6 +17,10 @@ mood and slang.
 - **Recently Used** when the search field is empty.
 - **Enter** pastes the emoji into the app you came from. You can also copy the emoji (or set copy
   as the default action), copy its name (⌘⇧C) or its `:shortcode:` (⌘⌥C).
+- **Choose AI Model… (⌘M)** lets emoji search use a different model than your Tinycast chat:
+  every enabled Tinycast connection and model is listed, with "Tinycast Default" on top. The
+  choice is remembered. Pick something small and fast (Claude Haiku, GPT-4.1 mini, Gemini Flash)
+  and keep your big model for chat.
 - Answers are cached per search, so repeating a search is instant and costs nothing.
 
 ## Install
@@ -63,8 +67,23 @@ When the extension runs in Raycast itself, it uses Raycast AI.
 | Preference | Default | What it does |
 | --- | --- | --- |
 | Tinycast Channel | Tinycast | Read settings from Tinycast, Tinycast Beta or Tinycast Dev |
-| AI Suggestions | 24 | How many emojis to ask for (12–48) |
+| AI Suggestions | 24 | How many emojis to ask for (12–48). Fewer means a shorter answer, so it arrives sooner |
+| Speed | On | Ask thinking models to think as little as possible (see below) |
 | Primary Action | Paste | Whether Enter pastes or copies |
+
+### Speed
+
+How long a search takes depends almost entirely on the model:
+
+- **Use a small model.** Pick one with **Choose AI Model… (⌘M)**. Haiku-, mini- and Flash-class
+  models usually answer in one to three seconds.
+- **Fast answers (on by default).** If you declared thinking levels for a model in Tinycast
+  (Settings → AI → the connection's model), the extension sends the lowest one ("none",
+  "minimal" or "low"), using the same request fields Tinycast uses. If a provider rejects that
+  field, the request is retried once without it.
+- **Fewer suggestions.** 12 instead of 24 halves what the model has to write.
+- **API connections are faster than installed tools.** `claude` and `codex` start a whole program
+  for every search, which adds a few seconds.
 
 ## Troubleshooting
 

@@ -10,6 +10,7 @@ import {
   describeHttpError,
   endpointURL,
   extractResponseText,
+  fastestEffort,
   findExecutable,
 } from "../src/lib/providers";
 import type { AIConnection, EmojiPrompt, ExecFn, FetchFn } from "../src/lib/types";
@@ -273,5 +274,100 @@ describe("CLI", () => {
     await expect(callCli("codex", "m", prompt, { exec, home: "/h", exists: () => true })).rejects.toThrow(
       "The AI returned an empty answer",
     );
+  });
+});
+
+describe("fastestEffort", () => {
+  const withEfforts = (efforts?: Record<string, string[]>): AIConnection => ({
+    ...conn("openAI", "https://api.openai.com/v1"),
+    ...(efforts ? { reasoningEfforts: efforts } : {}),
+  });
+  it("prefers none over minimal over low and ignores default", () => {
+    expect(fastestEffort(withEfforts({ m: ["default", "low", "none", "minimal"] }), "m")).toBe("none");
+    expect(fastestEffort(withEfforts({ m: ["default", "low", "minimal", "high"] }), "m")).toBe("minimal");
+    expect(fastestEffort(withEfforts({ m: ["default", "medium", "low"] }), "m")).toBe("low");
+  });
+  it("is null with only medium/high, undeclared, or other models", () => {
+    expect(fastestEffort(withEfforts({ m: ["default", "medium", "high"] }), "m")).toBeNull();
+    expect(fastestEffort(withEfforts(), "m")).toBeNull();
+    expect(fastestEffort(withEfforts({ other: ["low"] }), "m")).toBeNull();
+  });
+});
+
+describe("buildHttpRequest with effort", () => {
+  const body = (c: AIConnection, effort: string | null) =>
+    JSON.parse(buildHttpRequest(c, "m", prompt, "K", {}, effort).init.body);
+  it("openAI Responses: reasoning.effort", () => {
+    expect(body(conn("openAI", "https://api.openai.com/v1"), "minimal").reasoning).toEqual({ effort: "minimal" });
+  });
+  it("anthropic: output_config.effort", () => {
+    expect(body(conn("anthropic", "https://api.anthropic.com"), "low").output_config).toEqual({ effort: "low" });
+  });
+  it("openRouter: reasoning.effort", () => {
+    const b = body(conn("openRouter", "https://openrouter.ai/api/v1"), "none");
+    expect(b.reasoning).toEqual({ effort: "none" });
+    expect(b.reasoning_effort).toBeUndefined();
+  });
+  it("compatible: reasoning_effort", () => {
+    const b = body(conn("gemini", "https://generativelanguage.googleapis.com/v1beta/openai"), "none");
+    expect(b.reasoning_effort).toBe("none");
+    expect(b.thinking).toBeUndefined();
+    expect(body(conn("openAICompatible", "https://api.openai.com/v1"), "low").reasoning_effort).toBe("low");
+  });
+  it("gateway with none: thinking disabled, no reasoning_effort", () => {
+    const b = body(conn("openAICompatible", "https://gateway.example.com/v1"), "none");
+    expect(b.thinking).toEqual({ type: "disabled" });
+    expect(b.reasoning_effort).toBeUndefined();
+    const b2 = body(conn("openAI", "https://proxy.example.com/v1/"), "none");
+    expect(b2.thinking).toEqual({ type: "disabled" });
+    const b3 = body(conn("openAICompatible", "https://gateway.example.com/v1"), "low");
+    expect(b3.reasoning_effort).toBe("low");
+    expect(b3.thinking).toBeUndefined();
+  });
+  it("adds nothing when effort is null", () => {
+    for (const c of [
+      conn("openAI", "https://api.openai.com/v1"),
+      conn("anthropic", "https://api.anthropic.com"),
+      conn("openRouter", "https://openrouter.ai/api/v1"),
+      conn("openAICompatible", "https://gateway.example.com/v1"),
+    ]) {
+      const b = body(c, null);
+      for (const k of ["reasoning", "reasoning_effort", "thinking", "output_config"]) expect(b[k]).toBeUndefined();
+    }
+  });
+});
+
+describe("callApi effort retry", () => {
+  const c = conn("openAICompatible", "https://x.test/v1");
+  const ok = JSON.stringify({ choices: [{ message: { content: "😀" } }] });
+  const seq = (...rs: Array<[number, string]>) => {
+    const f = vi.fn(async () => {
+      const [status, body] = rs.shift()!;
+      return { ok: status < 300, status, text: async () => body };
+    });
+    return f as unknown as FetchFn & ReturnType<typeof vi.fn>;
+  };
+  const bodies = (f: ReturnType<typeof vi.fn>) => f.mock.calls.map((x) => JSON.parse(x[1].body));
+  it.each([400, 422])("retries once without effort after %i", async (status) => {
+    const f = seq([status, "bad field"], [200, ok]);
+    await expect(callApi(c, "m", prompt, "K", {}, f, "low")).resolves.toBe("😀");
+    const [first, second] = bodies(f);
+    expect(first.reasoning_effort).toBe("low");
+    expect(second.reasoning_effort).toBeUndefined();
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+  it("returns the retry's error if it fails too", async () => {
+    const f = seq([400, "{}"], [500, "boom"]);
+    await expect(callApi(c, "m", prompt, "K", {}, f, "low")).rejects.toThrow(/\(500\)/);
+  });
+  it("does not retry 400 without effort", async () => {
+    const f = seq([400, "bad"]);
+    await expect(callApi(c, "m", prompt, "K", {}, f)).rejects.toThrow(/400/);
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+  it("does not retry 401 with effort", async () => {
+    const f = seq([401, "no"]);
+    await expect(callApi(c, "m", prompt, "K", {}, f, "low")).rejects.toThrow(/401/);
+    expect(f).toHaveBeenCalledTimes(1);
   });
 });

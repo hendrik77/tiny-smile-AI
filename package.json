@@ -68,6 +68,15 @@
       ]
     },
     {
+      "name": "minimizeThinking",
+      "type": "checkbox",
+      "required": false,
+      "title": "Speed",
+      "label": "Fast answers (minimize model thinking)",
+      "description": "Ask thinking models to reason as little as possible, using the lowest level declared for the model in Tinycast.",
+      "default": true
+    },
+    {
       "name": "primaryAction",
       "type": "dropdown",
       "required": false,
