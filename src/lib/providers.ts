@@ -252,14 +252,25 @@ export async function callCli(
   tool: "claude" | "codex",
   model: string,
   prompt: EmojiPrompt,
-  deps: { exec: ExecFn; home: string; exists: (p: string) => boolean },
+  deps: { exec: ExecFn; home: string; exists: (p: string) => boolean; pathEnv?: string },
 ): Promise<string> {
   const file = findExecutable(tool, deps.home, deps.exists);
   if (!file) {
     throw new Error(`Couldn't find the \`${tool}\` command. Install it, or pick an API model in Tinycast → Settings → AI.`);
   }
   const { args, input } = buildCliInvocation(tool, model, prompt);
-  const { stdout } = await deps.exec(file, args, input === undefined ? { timeoutMs: 90000 } : { timeoutMs: 90000, input });
+  // GUI apps don't inherit the shell PATH, and npm-installed CLIs are `#!/usr/bin/env node` scripts.
+  const dirs = [
+    ...cliSearchPaths(deps.home),
+    file.slice(0, file.lastIndexOf("/")),
+    ...(deps.pathEnv ?? process.env.PATH ?? "").split(":"),
+  ].filter(Boolean);
+  const env = { PATH: [...new Set(dirs)].join(":") };
+  const { stdout } = await deps.exec(
+    file,
+    args,
+    input === undefined ? { timeoutMs: 90000, env } : { timeoutMs: 90000, env, input },
+  );
   const out = stdout.trim();
   if (!out) throw new Error(EMPTY_ANSWER);
   return out;

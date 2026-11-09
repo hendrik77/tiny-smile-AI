@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSuggester, NoRouteError, type SuggesterDeps } from "../src/lib/suggest";
+import { createSuggester, NoRouteError, routeLabel, type SuggesterDeps } from "../src/lib/suggest";
 import type { ExecFn, FetchFn } from "../src/lib/types";
 
 const CONN_ID = "6F9619FF-8B86-D011-B42D-00C04FC964FF";
@@ -123,6 +123,20 @@ describe("createSuggester", () => {
     expect(result.emojis.map((e) => e.emoji)).toEqual(["🎉", "🥳"]);
     expect(result.routeLabel).toBe("Claude Code · sonnet");
     expect(exec.calls.some((c) => c[0] === "/opt/homebrew/bin/claude")).toBe(true);
+  });
+
+  it("uses an enabled installed claude when the default is Apple Intelligence", async () => {
+    const plist = plistWith({
+      aiDefaultModel: b64({ appleIntelligence: {} }),
+      aiInstalledProviders: b64(["claude"]),
+    });
+    const exec = makeExec(plist);
+    const suggest = createSuggester(deps({ exec, exists: (p) => p === "/opt/homebrew/bin/claude" }));
+    const result = await suggest("party", { bundleId: "com.tinycast.app", count: 24 });
+    expect(result.routeLabel).toBe("Claude Code · default model");
+    const call = exec.calls.find((c) => c[0] === "/opt/homebrew/bin/claude");
+    expect(call).toBeTruthy();
+    expect(call).not.toContain("--model");
   });
 
   it("prefers Raycast AI when running inside Raycast", async () => {
@@ -262,3 +276,10 @@ describe("model override, listRoutes and minimizeThinking", () => {
   });
 });
 
+describe("routeLabel for CLI default models", () => {
+  it("shows default model for an empty model", () => {
+    expect(routeLabel({ kind: "cli", tool: "claude", model: "" })).toBe("Claude Code · default model");
+    expect(routeLabel({ kind: "cli", tool: "codex", model: "" })).toBe("Codex · default model");
+    expect(routeLabel({ kind: "cli", tool: "claude", model: "opus" })).toBe("Claude Code · opus");
+  });
+});

@@ -96,6 +96,11 @@ function decodeSelection(v: unknown): ModelSelection | null {
   }
 }
 
+function decodeStringList(v: unknown): string[] {
+  const json = decodeJSONData(v);
+  return Array.isArray(json) ? json.filter((x): x is string => typeof x === "string") : [];
+}
+
 export function decodeAISettings(plist: unknown): TinycastAISettings {
   const p = isObj(plist) ? plist : {};
   const routes = Array.isArray(p.aiDisabledRoutes)
@@ -105,6 +110,7 @@ export function decodeAISettings(plist: unknown): TinycastAISettings {
     connections: decodeConnections(p.aiConnections),
     defaultModel: decodeSelection(p.aiDefaultModel),
     disabledRoutes: routes,
+    enabledInstalledProviders: decodeStringList(p.aiInstalledProviders),
   };
 }
 
@@ -119,31 +125,45 @@ export async function readTinycastAISettings(bundleId: string, exec: ExecFn): Pr
 }
 
 const SETUP_HINT = "Add an API connection in Tinycast → Settings → AI → Providers.";
+const APPLE_HINT =
+  "Add an API connection or switch on the Claude or Codex tool in Tinycast → Settings → AI → Providers.";
 const UNSUPPORTED: Record<string, string> = { grok: "Grok", openCode: "OpenCode", cursor: "Cursor" };
+const CLI_TOOLS = ["claude", "codex"] as const;
+const CLAUDE_ALIASES = ["", "haiku", "sonnet", "opus"];
+
+/** A claude/codex default is usable unless disabled; with an installed-tools list it must be in it. */
+function cliDefaultUsable(settings: TinycastAISettings, kind: string): boolean {
+  const { disabledRoutes, enabledInstalledProviders: on } = settings;
+  return !disabledRoutes.includes(kind) && (on.length === 0 || on.includes(kind));
+}
 
 export function resolveRoute(settings: TinycastAISettings, override?: RouteOverride | null): RouteResolution {
-  const { connections, defaultModel: def, disabledRoutes } = settings;
+  const { connections, defaultModel: def, disabledRoutes, enabledInstalledProviders: on } = settings;
   const enabled = (key: string) => !disabledRoutes.includes(key);
 
   if (override?.kind === "api") {
     const c = connections.find((x) => x.id === override.connection);
     if (c && enabled(`api:${c.id}`)) return { ok: true, route: { kind: "api", connection: c, model: override.model } };
-  } else if (override?.kind === "cli" && enabled(override.tool)) {
+  } else if (override?.kind === "cli" && enabled(override.tool) && (on.includes(override.tool) || def?.kind === override.tool)) {
     return { ok: true, route: { kind: "cli", tool: override.tool, model: override.model } };
   }
 
   if (def?.kind === "api") {
     const c = connections.find((x) => x.id === def.connection);
     if (c && enabled(`api:${c.id}`)) return { ok: true, route: { kind: "api", connection: c, model: def.model } };
-  } else if ((def?.kind === "claude" || def?.kind === "codex") && enabled(def.kind)) {
+  } else if ((def?.kind === "claude" || def?.kind === "codex") && cliDefaultUsable(settings, def.kind)) {
     return { ok: true, route: { kind: "cli", tool: def.kind, model: def.model } };
   }
 
   const first = connections.find((c) => c.models.length > 0 && enabled(`api:${c.id}`));
   if (first) return { ok: true, route: { kind: "api", connection: first, model: first.models[0] } };
 
+  for (const tool of CLI_TOOLS) {
+    if (on.includes(tool) && enabled(tool)) return { ok: true, route: { kind: "cli", tool, model: "" } };
+  }
+
   if (def?.kind === "appleIntelligence") {
-    return { ok: false, reason: `Apple Intelligence can't be used by extensions. ${SETUP_HINT}` };
+    return { ok: false, reason: `Apple Intelligence can't be used by extensions. ${APPLE_HINT}` };
   }
   if (def && def.kind in UNSUPPORTED) {
     return { ok: false, reason: `${UNSUPPORTED[def.kind]} isn't supported yet. ${SETUP_HINT}` };
@@ -152,7 +172,7 @@ export function resolveRoute(settings: TinycastAISettings, override?: RouteOverr
 }
 
 export function listRouteChoices(settings: TinycastAISettings): RouteChoice[] {
-  const { connections, defaultModel: def, disabledRoutes } = settings;
+  const { connections, defaultModel: def, disabledRoutes, enabledInstalledProviders: on } = settings;
   const enabled = (key: string) => !disabledRoutes.includes(key);
   const resolved = resolveRoute(settings);
   const out: RouteChoice[] = [];
@@ -175,8 +195,16 @@ export function listRouteChoices(settings: TinycastAISettings): RouteChoice[] {
     }
     for (const model of models) push(`api:${c.id}:${model}`, source, { kind: "api", connection: c.id, model });
   }
-  if ((def?.kind === "claude" || def?.kind === "codex") && enabled(def.kind)) {
-    push(`cli:${def.kind}:${def.model}`, CLI_TITLES[def.kind], { kind: "cli", tool: def.kind, model: def.model });
+  for (const tool of CLI_TOOLS) {
+    const defModel = def?.kind === tool ? def.model : "";
+    let models: string[];
+    if (on.includes(tool) && enabled(tool)) {
+      models = tool === "claude" ? [...CLAUDE_ALIASES] : [""];
+      if (defModel && !models.includes(defModel)) models.unshift(defModel);
+    } else if (def?.kind === tool && cliDefaultUsable(settings, tool)) {
+      models = [defModel];
+    } else continue;
+    for (const model of models) push(`cli:${tool}:${model}`, CLI_TITLES[tool], { kind: "cli", tool, model });
   }
   return out;
 }

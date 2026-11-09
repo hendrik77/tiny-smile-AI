@@ -263,7 +263,21 @@ describe("CLI", () => {
     expect(exec).toHaveBeenCalledWith(
       "/opt/homebrew/bin/claude",
       buildCliInvocation("claude", "haiku", prompt).args,
-      { timeoutMs: 90000 },
+      expect.objectContaining({ timeoutMs: 90000, env: expect.objectContaining({ PATH: expect.stringContaining("/opt/homebrew/bin") }) }),
+    );
+  });
+  it("callCli passes PATH with search dirs, exec dir, then the existing PATH", async () => {
+    const exec = vi.fn(async (..._a: unknown[]) => ({ stdout: "x", stderr: "" })) as unknown as ExecFn;
+    await callCli("claude", "", prompt, {
+      exec,
+      home: "/h",
+      exists: (p) => p === "/h/.nvm/x/claude" || p === "/usr/local/bin/claude",
+      pathEnv: "/usr/bin:/custom/bin:/h/.local/bin",
+    });
+    const opts = (exec as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2] as { env: { PATH: string }; timeoutMs: number };
+    expect(opts.timeoutMs).toBe(90000);
+    expect(opts.env.PATH).toBe(
+      "/h/.local/bin:/h/.claude/local:/opt/homebrew/bin:/usr/local/bin:/h/.bun/bin:/h/.volta/bin:/h/.npm-global/bin:/usr/bin:/custom/bin",
     );
   });
   it("callCli errors", async () => {

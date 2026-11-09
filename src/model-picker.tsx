@@ -54,7 +54,7 @@ export function ModelPicker(props: {
           id="tinycast-default"
           icon={Icon.Stars}
           title="Tinycast Default"
-          subtitle={defaultChoice ? `${defaultChoice.source} · ${defaultChoice.model}` : "Settings → AI"}
+          subtitle={defaultChoice ? `${defaultChoice.source} · ${defaultChoice.model || "Default model"}` : "Settings → AI"}
           accessories={currentId === null ? [{ icon: Icon.Checkmark, tooltip: "In use" }] : []}
           actions={
             <ActionPanel>
@@ -70,7 +70,7 @@ export function ModelPicker(props: {
               key={choice.id}
               id={choice.id}
               icon={choice.override.kind === "cli" ? Icon.Terminal : Icon.Globe}
-              title={choice.model}
+              title={choice.model === "" ? "Default model" : choice.model}
               keywords={[group.source]}
               accessories={[
                 ...(choice.isDefault ? [{ tag: "Tinycast default" }] : []),

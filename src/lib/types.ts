@@ -43,6 +43,8 @@ export interface TinycastAISettings {
   defaultModel: ModelSelection | null;
   /** `AIModelSource.storageKey` values: "appleIntelligence", "claude", "codex", "api:<UUID>", … */
   disabledRoutes: string[];
+  /** Installed CLI tools switched on in Tinycast (`aiInstalledProviders`), e.g. ["claude", "codex"]. */
+  enabledInstalledProviders: string[];
 }
 
 /** What the extension will actually call. */
@@ -75,7 +77,7 @@ export type RouteResolution = { ok: true; route: AIRoute } | { ok: false; reason
 export type ExecFn = (
   file: string,
   args: string[],
-  options?: { timeoutMs?: number; input?: string },
+  options?: { timeoutMs?: number; input?: string; env?: Record<string, string> },
 ) => Promise<{ stdout: string; stderr: string }>;
 
 /** Injectable fetch subset. */
