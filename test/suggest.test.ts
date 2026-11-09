@@ -43,14 +43,14 @@ function makeExec(plist: string, opts: { key?: string | null } = {}): ExecFn & {
 
 function makeFetch(text: string, status = 200): FetchFn & { mock: ReturnType<typeof vi.fn> } {
   const mock = vi.fn(async () => ({ ok: status >= 200 && status < 300, status, text: async () => text }));
-  const fn = ((url: string, init: Parameters<FetchFn>[1]) =>
-    (mock as unknown as FetchFn)(url, init)) as FetchFn & { mock: typeof mock };
+  const fn = ((url: string, init: Parameters<FetchFn>[1]) => (mock as unknown as FetchFn)(url, init)) as FetchFn & {
+    mock: typeof mock;
+  };
   fn.mock = mock;
   return fn;
 }
 
-const anthropicAnswer = (answer: string) =>
-  JSON.stringify({ content: [{ type: "text", text: answer }] });
+const anthropicAnswer = (answer: string) => JSON.stringify({ content: [{ type: "text", text: answer }] });
 
 function deps(over: Partial<SuggesterDeps> = {}): SuggesterDeps {
   return {
@@ -116,9 +116,7 @@ describe("createSuggester", () => {
   it("uses the claude CLI route", async () => {
     const plist = plistWith({ aiDefaultModel: b64({ claude: { model: "sonnet" } }) });
     const exec = makeExec(plist);
-    const suggest = createSuggester(
-      deps({ exec, exists: (p) => p === "/opt/homebrew/bin/claude" }),
-    );
+    const suggest = createSuggester(deps({ exec, exists: (p) => p === "/opt/homebrew/bin/claude" }));
     const result = await suggest("party", { bundleId: "com.tinycast.app", count: 24 });
     expect(result.emojis.map((e) => e.emoji)).toEqual(["🎉", "🥳"]);
     expect(result.routeLabel).toBe("Claude Code · sonnet");
@@ -150,9 +148,7 @@ describe("createSuggester", () => {
 
   it("fails clearly when the answer holds no known emoji", async () => {
     const suggest = createSuggester(deps({ fetch: makeFetch(anthropicAnswer("I cannot help with that.")) }));
-    await expect(suggest("x", { bundleId: "com.tinycast.app", count: 24 })).rejects.toThrow(
-      /didn't suggest any emoji/,
-    );
+    await expect(suggest("x", { bundleId: "com.tinycast.app", count: 24 })).rejects.toThrow(/didn't suggest any emoji/);
   });
 
   it("surfaces HTTP errors and does not cache them", async () => {
@@ -195,9 +191,10 @@ describe("model override, listRoutes and minimizeThinking", () => {
   });
   const opts = { bundleId: "com.tinycast.app", count: 24 };
   const sent = (d: SuggesterDeps) =>
-    (d.fetch as unknown as { mock: ReturnType<typeof vi.fn> }).mock.mock.calls.map(
-      (c) => ({ url: c[0] as string, body: JSON.parse(c[1].body) }),
-    );
+    (d.fetch as unknown as { mock: ReturnType<typeof vi.fn> }).mock.mock.calls.map((c) => ({
+      url: c[0] as string,
+      body: JSON.parse(c[1].body),
+    }));
 
   it("override changes the route and label", async () => {
     const d = deps({
@@ -305,7 +302,7 @@ describe("diagnose", () => {
   });
 
   it("reports a Keychain failure as a line", async () => {
-    const exec = (async (file: string, args: string[]) => {
+    const exec = (async (file: string) => {
       if (file.endsWith("security")) throw new Error("security: User interaction is not allowed.");
       return { stdout: anthropicPlist, stderr: "" };
     }) as ExecFn;
@@ -330,7 +327,9 @@ describe("diagnose", () => {
 
   it("shows the CLI executable path", async () => {
     const exec = makeExec(plistWith({ aiDefaultModel: b64({ claude: { model: "sonnet" } }) }));
-    const report = await createSuggester(deps({ exec, exists: (p) => p === "/opt/homebrew/bin/claude" })).diagnose(base);
+    const report = await createSuggester(deps({ exec, exists: (p) => p === "/opt/homebrew/bin/claude" })).diagnose(
+      base,
+    );
     expect(report).toContain("Executable: /opt/homebrew/bin/claude");
     const none = await createSuggester(deps({ exec })).diagnose(base);
     expect(none).toContain("Executable: not found");

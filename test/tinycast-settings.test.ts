@@ -26,23 +26,44 @@ describe("decodeAISettings", () => {
   it("decodes connections, default model, and disabled routes", () => {
     const s = decodeAISettings({
       aiConnections: data(
-        '[{"id":"' + C1 + '","name":"My Claude","provider":"anthropic","baseURL":"https:\\/\\/api.anthropic.com","models":["claude-sonnet-4-5"],"visionModels":[],"outputLimits":{}}]',
+        '[{"id":"' +
+          C1 +
+          '","name":"My Claude","provider":"anthropic","baseURL":"https:\\/\\/api.anthropic.com","models":["claude-sonnet-4-5"],"visionModels":[],"outputLimits":{}}]',
       ),
       aiDefaultModel: data({ api: { connection: C1, model: "gpt-4.1", effort: "low" } }),
       aiDisabledRoutes: ["api:X", "claude"],
     });
     expect(s.connections).toEqual([
-      { id: C1, name: "My Claude", provider: "anthropic", baseURL: "https://api.anthropic.com", models: ["claude-sonnet-4-5"] },
+      {
+        id: C1,
+        name: "My Claude",
+        provider: "anthropic",
+        baseURL: "https://api.anthropic.com",
+        models: ["claude-sonnet-4-5"],
+      },
     ]);
     expect(s.defaultModel).toEqual({ kind: "api", connection: C1, model: "gpt-4.1", effort: "low" });
     expect(s.disabledRoutes).toEqual(["api:X", "claude"]);
   });
   it("is tolerant of missing/invalid values", () => {
-    expect(decodeAISettings({})).toEqual({ connections: [], defaultModel: null, disabledRoutes: [], enabledInstalledProviders: [] });
-    expect(decodeAISettings(null)).toEqual({ connections: [], defaultModel: null, disabledRoutes: [], enabledInstalledProviders: [] });
-    expect(
-      decodeAISettings({ aiConnections: data("garbage"), aiDefaultModel: "x", aiDisabledRoutes: "y" }),
-    ).toEqual({ connections: [], defaultModel: null, disabledRoutes: [], enabledInstalledProviders: [] });
+    expect(decodeAISettings({})).toEqual({
+      connections: [],
+      defaultModel: null,
+      disabledRoutes: [],
+      enabledInstalledProviders: [],
+    });
+    expect(decodeAISettings(null)).toEqual({
+      connections: [],
+      defaultModel: null,
+      disabledRoutes: [],
+      enabledInstalledProviders: [],
+    });
+    expect(decodeAISettings({ aiConnections: data("garbage"), aiDefaultModel: "x", aiDisabledRoutes: "y" })).toEqual({
+      connections: [],
+      defaultModel: null,
+      disabledRoutes: [],
+      enabledInstalledProviders: [],
+    });
   });
   it("drops invalid connections and defaults models", () => {
     const s = decodeAISettings({
@@ -78,16 +99,24 @@ describe("decodeAISettings", () => {
 describe("reasoningOptions decoding", () => {
   const dec = (extra: Record<string, unknown>) =>
     decodeAISettings({
-      aiConnections: data([{ id: C1, name: "a", provider: "openAI", baseURL: "https://api.openai.com/v1", models: ["gpt-5"], ...extra }]),
+      aiConnections: data([
+        { id: C1, name: "a", provider: "openAI", baseURL: "https://api.openai.com/v1", models: ["gpt-5"], ...extra },
+      ]),
     }).connections[0];
   it("decodes efforts per model", () => {
-    const c = dec({ reasoningOptions: { "gpt-5": { efforts: ["default", "minimal", "low", "medium", "high"], defaultEffort: "default" } } });
+    const c = dec({
+      reasoningOptions: {
+        "gpt-5": { efforts: ["default", "minimal", "low", "medium", "high"], defaultEffort: "default" },
+      },
+    });
     expect(c.reasoningEfforts).toEqual({ "gpt-5": ["default", "minimal", "low", "medium", "high"] });
   });
   it("omits the field for garbage or missing options", () => {
     expect("reasoningEfforts" in dec({})).toBe(false);
     expect("reasoningEfforts" in dec({ reasoningOptions: "x" })).toBe(false);
-    expect("reasoningEfforts" in dec({ reasoningOptions: { m: { efforts: "low" }, n: 3, o: { efforts: [1, 2] } } })).toBe(false);
+    expect(
+      "reasoningEfforts" in dec({ reasoningOptions: { m: { efforts: "low" }, n: 3, o: { efforts: [1, 2] } } }),
+    ).toBe(false);
   });
   it("keeps only string entries and valid models", () => {
     const c = dec({ reasoningOptions: { a: { efforts: ["low", 3, "high"] }, b: { nope: 1 } } });
@@ -109,7 +138,9 @@ describe("listRouteChoices", () => {
   it("lists models in connection then model order with ids, sources and default flag", () => {
     const c1 = { ...conn(C1, ["a", "b"]), name: "  Mine " };
     const c2 = { ...conn(C2, ["z"]), name: "  ", provider: "gemini" as const };
-    const r = listRouteChoices(base({ connections: [c1, c2], defaultModel: { kind: "api", connection: C1, model: "b" } }));
+    const r = listRouteChoices(
+      base({ connections: [c1, c2], defaultModel: { kind: "api", connection: C1, model: "b" } }),
+    );
     expect(r.map((x) => x.id)).toEqual([`api:${C1}:a`, `api:${C1}:b`, `api:${C2}:z`]);
     expect(r.map((x) => x.source)).toEqual(["Mine", "Mine", PROVIDER_TITLES.gemini]);
     expect(PROVIDER_TITLES.gemini).toBe("Google Gemini");
@@ -121,12 +152,16 @@ describe("listRouteChoices", () => {
     expect(r.map((x) => x.id)).toEqual([`api:${C2}:z`]);
   });
   it("includes a default model that is not in the list, first, flagged default", () => {
-    const r = listRouteChoices(base({ connections: [conn(C1, ["a"])], defaultModel: { kind: "api", connection: C1, model: "odd" } }));
+    const r = listRouteChoices(
+      base({ connections: [conn(C1, ["a"])], defaultModel: { kind: "api", connection: C1, model: "odd" } }),
+    );
     expect(r.map((x) => x.model)).toEqual(["odd", "a"]);
     expect(r.map((x) => x.isDefault)).toEqual([true, false]);
   });
   it("adds a cli choice for an enabled claude/codex default", () => {
-    const r = listRouteChoices(base({ connections: [conn(C1, ["a"])], defaultModel: { kind: "claude", model: "sonnet" } }));
+    const r = listRouteChoices(
+      base({ connections: [conn(C1, ["a"])], defaultModel: { kind: "claude", model: "sonnet" } }),
+    );
     expect(r.find((x) => x.id === "cli:claude:sonnet")).toEqual({
       id: "cli:claude:sonnet",
       model: "sonnet",
@@ -137,10 +172,14 @@ describe("listRouteChoices", () => {
     expect(r.find((x) => x.id === `api:${C1}:a`)?.isDefault).toBe(false);
     const x = listRouteChoices(base({ defaultModel: { kind: "codex", model: "g" } }));
     expect(x[0]).toMatchObject({ id: "cli:codex:g", source: "Codex" });
-    expect(listRouteChoices(base({ defaultModel: { kind: "codex", model: "g" }, disabledRoutes: ["codex"] }))).toEqual([]);
+    expect(listRouteChoices(base({ defaultModel: { kind: "codex", model: "g" }, disabledRoutes: ["codex"] }))).toEqual(
+      [],
+    );
   });
   it("flags the fall-forward route as default when the real default is unusable", () => {
-    const r = listRouteChoices(base({ connections: [conn(C2, ["z", "y"])], defaultModel: { kind: "api", connection: C1, model: "m" } }));
+    const r = listRouteChoices(
+      base({ connections: [conn(C2, ["z", "y"])], defaultModel: { kind: "api", connection: C1, model: "m" } }),
+    );
     expect(r.map((x) => x.isDefault)).toEqual([true, false]);
   });
   it("flags nothing when resolveRoute fails", () => {
@@ -164,7 +203,12 @@ describe("readTinycastAISettings", () => {
     };
     const s = await readTinycastAISettings("com.tinycast.app", exec);
     expect(calls).toEqual([["/usr/bin/defaults", ["export", "com.tinycast.app", "-"]]]);
-    expect(s).toEqual({ connections: [], defaultModel: { kind: "appleIntelligence" }, disabledRoutes: ["codex"], enabledInstalledProviders: [] });
+    expect(s).toEqual({
+      connections: [],
+      defaultModel: { kind: "appleIntelligence" },
+      disabledRoutes: ["codex"],
+      enabledInstalledProviders: [],
+    });
   });
   it("throws a helpful error when defaults fails", async () => {
     const exec: ExecFn = async () => {
@@ -186,13 +230,12 @@ describe("resolveRoute", () => {
   });
   it("uses an enabled api default even if the model is not listed", () => {
     const c = conn(C1);
-    const r = resolveRoute(
-      base({ connections: [c], defaultModel: { kind: "api", connection: C1, model: "other" } }),
-    );
+    const r = resolveRoute(base({ connections: [c], defaultModel: { kind: "api", connection: C1, model: "other" } }));
     expect(r).toEqual({ ok: true, route: { kind: "api", connection: c, model: "other" } });
   });
   it("skips a disabled or missing api default and falls forward", () => {
-    const c1 = conn(C1), c2 = conn(C2, ["z", "y"]);
+    const c1 = conn(C1),
+      c2 = conn(C2, ["z", "y"]);
     const d = { kind: "api", connection: C1, model: "m" } as const;
     expect(resolveRoute(base({ connections: [c1, c2], defaultModel: d, disabledRoutes: ["api:" + C1] }))).toEqual({
       ok: true,
@@ -252,7 +295,8 @@ describe("resolveRoute with override", () => {
     enabledInstalledProviders: [],
     ...o,
   });
-  const c1 = conn(C1), c2 = conn(C2, ["z"]);
+  const c1 = conn(C1),
+    c2 = conn(C2, ["z"]);
   const def = { kind: "api", connection: C1, model: "m1" } as const;
   it("uses a valid api override, even for an unlisted model", () => {
     const s = base({ connections: [c1, c2], defaultModel: def });
@@ -268,7 +312,9 @@ describe("resolveRoute with override", () => {
   it("falls back to the default for disabled/missing connections", () => {
     const expected = { ok: true, route: { kind: "api", connection: c1, model: "m1" } };
     const ov = { kind: "api", connection: C2, model: "z" } as const;
-    expect(resolveRoute(base({ connections: [c1, c2], defaultModel: def, disabledRoutes: ["api:" + C2] }), ov)).toEqual(expected);
+    expect(resolveRoute(base({ connections: [c1, c2], defaultModel: def, disabledRoutes: ["api:" + C2] }), ov)).toEqual(
+      expected,
+    );
     expect(resolveRoute(base({ connections: [c1], defaultModel: def }), ov)).toEqual(expected);
     expect(resolveRoute(base({ connections: [c1], defaultModel: def }), null)).toEqual(expected);
   });
@@ -289,7 +335,10 @@ const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64");
 
 describe("aiInstalledProviders decoding", () => {
   it("decodes the enabled installed tools", () => {
-    expect(decodeAISettings({ aiInstalledProviders: data(["claude", "codex"]) }).enabledInstalledProviders).toEqual(["claude", "codex"]);
+    expect(decodeAISettings({ aiInstalledProviders: data(["claude", "codex"]) }).enabledInstalledProviders).toEqual([
+      "claude",
+      "codex",
+    ]);
   });
   it("is tolerant of garbage and a missing key", () => {
     expect(decodeAISettings({ aiInstalledProviders: data("garbage") }).enabledInstalledProviders).toEqual([]);
@@ -298,7 +347,9 @@ describe("aiInstalledProviders decoding", () => {
     expect(decodeAISettings({}).enabledInstalledProviders).toEqual([]);
   });
   it("drops non-string entries", () => {
-    expect(decodeAISettings({ aiInstalledProviders: data(["claude", 3, null]) }).enabledInstalledProviders).toEqual(["claude"]);
+    expect(decodeAISettings({ aiInstalledProviders: data(["claude", 3, null]) }).enabledInstalledProviders).toEqual([
+      "claude",
+    ]);
   });
   it("reads the key from the plist", async () => {
     const plist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -356,7 +407,9 @@ describe("resolveRoute with installed tools", () => {
     });
   });
   it("claude default enabled-installed is used with its model", () => {
-    expect(resolveRoute(base({ defaultModel: { kind: "claude", model: "sonnet" }, enabledInstalledProviders: ["claude"] }))).toEqual({
+    expect(
+      resolveRoute(base({ defaultModel: { kind: "claude", model: "sonnet" }, enabledInstalledProviders: ["claude"] })),
+    ).toEqual({
       ok: true,
       route: { kind: "cli", tool: "claude", model: "sonnet" },
     });
@@ -400,16 +453,22 @@ describe("listRouteChoices with installed tools", () => {
     expect(r[0].override).toEqual({ kind: "cli", tool: "claude", model: "" });
   });
   it("lists codex default plus the default's codex model", () => {
-    const r = listRouteChoices(base({ defaultModel: { kind: "codex", model: "gpt-5" }, enabledInstalledProviders: ["codex"] }));
+    const r = listRouteChoices(
+      base({ defaultModel: { kind: "codex", model: "gpt-5" }, enabledInstalledProviders: ["codex"] }),
+    );
     expect(r.map((x) => x.id)).toEqual(["cli:codex:gpt-5", "cli:codex:"]);
     expect(r.map((x) => x.isDefault)).toEqual([true, false]);
     expect(r.every((x) => x.source === "Codex")).toBe(true);
   });
   it("includes the default claude model exactly once", () => {
-    const odd = listRouteChoices(base({ defaultModel: { kind: "claude", model: "claude-x" }, enabledInstalledProviders: ["claude"] }));
+    const odd = listRouteChoices(
+      base({ defaultModel: { kind: "claude", model: "claude-x" }, enabledInstalledProviders: ["claude"] }),
+    );
     expect(odd.map((x) => x.model)).toEqual(["claude-x", "", "haiku", "sonnet", "opus"]);
     expect(odd.filter((x) => x.isDefault).map((x) => x.model)).toEqual(["claude-x"]);
-    const known = listRouteChoices(base({ defaultModel: { kind: "claude", model: "sonnet" }, enabledInstalledProviders: ["claude"] }));
+    const known = listRouteChoices(
+      base({ defaultModel: { kind: "claude", model: "sonnet" }, enabledInstalledProviders: ["claude"] }),
+    );
     expect(known.map((x) => x.model)).toEqual(["", "haiku", "sonnet", "opus"]);
     expect(known.filter((x) => x.isDefault).map((x) => x.model)).toEqual(["sonnet"]);
   });
@@ -461,6 +520,8 @@ describe("readTinycastAISettingsDetailed", () => {
 describe("routeLabel", () => {
   it("labels api and cli routes", () => {
     expect(routeLabel({ kind: "cli", tool: "claude", model: "" })).toBe("Claude Code · default model");
-    expect(routeLabel({ kind: "api", connection: conn(C1), model: "m" })).toBe("nC1 · m".replace("nC1", "n" + C1.slice(0, 2)));
+    expect(routeLabel({ kind: "api", connection: conn(C1), model: "m" })).toBe(
+      "nC1 · m".replace("nC1", "n" + C1.slice(0, 2)),
+    );
   });
 });

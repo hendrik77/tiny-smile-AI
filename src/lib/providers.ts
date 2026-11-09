@@ -60,7 +60,8 @@ export function assertSafeEndpoint(url: string): void {
     throw new Error(`Invalid AI endpoint URL: ${url}`);
   }
   if (parsed.protocol === "https:") return;
-  if (parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname.toLowerCase())) return;
+  if (parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname.toLowerCase()))
+    return;
   throw new Error("Refusing to send the request: the AI endpoint must use https (http is only allowed for localhost).");
 }
 
@@ -209,18 +210,25 @@ export function buildCliInvocation(
       args: [
         "-p",
         ...(model ? ["--model", model] : []),
-        "--output-format", "text",
+        "--output-format",
+        "text",
         "--no-session-persistence",
-        "--disallowedTools", "*",
-        "--max-turns", "1",
-        "--system-prompt", prompt.system,
+        "--disallowedTools",
+        "*",
+        "--max-turns",
+        "1",
+        "--system-prompt",
+        prompt.system,
         prompt.user,
       ],
     };
   }
   return {
     args: [
-      "exec", "--skip-git-repo-check", "--sandbox", "read-only",
+      "exec",
+      "--skip-git-repo-check",
+      "--sandbox",
+      "read-only",
       ...(model ? ["--model", model] : []),
       `${prompt.system}\n\n${prompt.user}`,
     ],
@@ -256,7 +264,9 @@ export async function callCli(
 ): Promise<string> {
   const file = findExecutable(tool, deps.home, deps.exists);
   if (!file) {
-    throw new Error(`Couldn't find the \`${tool}\` command. Install it, or pick an API model in Tinycast → Settings → AI.`);
+    throw new Error(
+      `Couldn't find the \`${tool}\` command. Install it, or pick an API model in Tinycast → Settings → AI.`,
+    );
   }
   const { args, input } = buildCliInvocation(tool, model, prompt);
   // GUI apps don't inherit the shell PATH, and npm-installed CLIs are `#!/usr/bin/env node` scripts.

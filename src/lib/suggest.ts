@@ -6,16 +6,7 @@ import { callApi, callCli, fastestEffort, findExecutable } from "./providers";
 import { listRouteChoices, readTinycastAISettingsDetailed, resolveRoute, routeLabel } from "./tinycast-settings";
 
 export { routeLabel };
-import type {
-  AIRoute,
-  EmojiEntry,
-  EmojiPrompt,
-  ExecFn,
-  FetchFn,
-  RouteChoice,
-  RouteOverride,
-  TinycastAISettings,
-} from "./types";
+import type { EmojiEntry, EmojiPrompt, ExecFn, FetchFn, RouteChoice, RouteOverride, TinycastAISettings } from "./types";
 import { findEmoji } from "./emoji-data";
 
 /** Thrown when Tinycast has no AI route the extension can use; the message says what to set up. */
@@ -144,7 +135,15 @@ export function createSuggester(deps: SuggesterDeps) {
       key: `api:${connection.id}:${model}`,
       label,
       ask: (prompt, minimize) =>
-        callApi(connection, model, prompt, apiKey, headers, deps.fetch, minimize ? fastestEffort(connection, model) : null),
+        callApi(
+          connection,
+          model,
+          prompt,
+          apiKey,
+          headers,
+          deps.fetch,
+          minimize ? fastestEffort(connection, model) : null,
+        ),
     };
   }
 

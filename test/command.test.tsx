@@ -54,6 +54,14 @@ vi.mock("@raycast/api", async () => {
     Action,
     List,
     useNavigation: () => ({ pop: h.pop, push: vi.fn() }),
+    Keyboard: {
+      Shortcut: {
+        Common: {
+          Copy: { modifiers: ["cmd", "shift"], key: "c" },
+          CopyName: { modifiers: ["cmd", "opt"], key: "c" },
+        },
+      },
+    },
     Icon: new Proxy({}, { get: (_t, k) => String(k) }),
     Toast: { Style: { Success: "success", Failure: "failure", Animated: "animated" } },
     showToast: h.showToast,
@@ -76,7 +84,10 @@ vi.mock("../src/lib/suggest", async (importActual) => {
   h.suggest = vi.fn();
   h.listRoutes = vi.fn();
   h.diagnose = vi.fn();
-  return { ...actual, createSuggester: () => Object.assign(h.suggest, { listRoutes: h.listRoutes, diagnose: h.diagnose }) };
+  return {
+    ...actual,
+    createSuggester: () => Object.assign(h.suggest, { listRoutes: h.listRoutes, diagnose: h.diagnose }),
+  };
 });
 
 import Command from "../src/ai-emoji-search";
@@ -107,7 +118,13 @@ const routeChoices = [
     override: { kind: "api", connection: "C1", model: "claude-sonnet-4-5" },
     isDefault: true,
   },
-  { id: "api:C1:claude-haiku-4-5", model: "claude-haiku-4-5", source: "Anthropic Claude", override: haiku, isDefault: false },
+  {
+    id: "api:C1:claude-haiku-4-5",
+    model: "claude-haiku-4-5",
+    source: "Anthropic Claude",
+    override: haiku,
+    isDefault: false,
+  },
   {
     id: "api:C2:gpt-4.1-mini",
     model: "gpt-4.1-mini",
@@ -260,7 +277,9 @@ describe("ai-emoji-search command", () => {
     await mount();
     await type("party");
     const item = renderer.root.findAllByType("grid-item" as never)[0];
-    const firstAction = item.findAll((n) => (n.type as unknown) === "action-copy" || (n.type as unknown) === "action-paste")[0];
+    const firstAction = item.findAll(
+      (n) => (n.type as unknown) === "action-copy" || (n.type as unknown) === "action-paste",
+    )[0];
     expect(firstAction.type).toBe("action-copy");
     expect(firstAction.props.title).toBe("Copy Emoji");
   });

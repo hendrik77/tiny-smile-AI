@@ -48,13 +48,17 @@ export function ModelPicker(props: {
 
   return (
     <List isLoading={loading} navigationTitle="Choose AI Model" searchBarPlaceholder="Filter models…">
-      {error ? <List.EmptyView icon={Icon.Warning} title="Couldn't read Tinycast's AI settings" description={error} /> : null}
+      {error ? (
+        <List.EmptyView icon={Icon.Warning} title="Couldn't read Tinycast's AI settings" description={error} />
+      ) : null}
       <List.Section title="Default">
         <List.Item
           id="tinycast-default"
           icon={Icon.Stars}
           title="Tinycast Default"
-          subtitle={defaultChoice ? `${defaultChoice.source} · ${defaultChoice.model || "Default model"}` : "Settings → AI"}
+          subtitle={
+            defaultChoice ? `${defaultChoice.source} · ${defaultChoice.model || "Default model"}` : "Settings → AI"
+          }
           accessories={currentId === null ? [{ icon: Icon.Checkmark, tooltip: "In use" }] : []}
           actions={
             <ActionPanel>

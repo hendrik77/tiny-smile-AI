@@ -6,6 +6,7 @@ import {
   Clipboard,
   Grid,
   Icon,
+  Keyboard,
   LocalStorage,
   Toast,
   environment,
@@ -19,17 +20,8 @@ import { findEmoji } from "./lib/emoji-data";
 import { execFileAsync } from "./lib/exec";
 import { searchLocal } from "./lib/local-search";
 import { buildSections } from "./lib/sections";
-import {
-  NoRouteError,
-  createSuggester,
-  type SuggesterDeps,
-} from "./lib/suggest";
-import type {
-  EmojiEntry,
-  FetchFn,
-  RouteChoice,
-  RouteOverride,
-} from "./lib/types";
+import { NoRouteError, createSuggester, type SuggesterDeps } from "./lib/suggest";
+import type { EmojiEntry, FetchFn, RouteChoice, RouteOverride } from "./lib/types";
 import { version as extensionVersion } from "./lib/version";
 import { ModelPicker } from "./model-picker";
 
@@ -62,9 +54,7 @@ function makeDeps(): SuggesterDeps {
     home: homedir(),
     exists: (path) => existsSync(path),
     cache: new Cache({ namespace: "ai-suggestions" }),
-    raycastAsk: canUseRaycastAI()
-      ? (prompt) => AI.ask(prompt, { creativity: "low" })
-      : undefined,
+    raycastAsk: canUseRaycastAI() ? (prompt) => AI.ask(prompt, { creativity: "low" }) : undefined,
   };
 }
 
@@ -85,9 +75,7 @@ function useRecents() {
         const list: unknown = raw ? JSON.parse(raw) : [];
         if (Array.isArray(list)) {
           setRecents(
-            list
-              .map((e) => (typeof e === "string" ? findEmoji(e) : undefined))
-              .filter(Boolean) as EmojiEntry[],
+            list.map((e) => (typeof e === "string" ? findEmoji(e) : undefined)).filter(Boolean) as EmojiEntry[],
           );
         }
       } catch {
@@ -98,14 +86,8 @@ function useRecents() {
 
   function remember(entry: EmojiEntry) {
     setRecents((current) => {
-      const next = [
-        entry,
-        ...current.filter((e) => e.emoji !== entry.emoji),
-      ].slice(0, MAX_RECENTS);
-      LocalStorage.setItem(
-        RECENTS_KEY,
-        JSON.stringify(next.map((e) => e.emoji)),
-      );
+      const next = [entry, ...current.filter((e) => e.emoji !== entry.emoji)].slice(0, MAX_RECENTS);
+      LocalStorage.setItem(RECENTS_KEY, JSON.stringify(next.map((e) => e.emoji)));
       return next;
     });
   }
@@ -122,11 +104,7 @@ function parseOverride(raw: string | undefined): RouteOverride | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw);
-    if (
-      value?.kind === "api" &&
-      typeof value.connection === "string" &&
-      typeof value.model === "string"
-    ) {
+    if (value?.kind === "api" && typeof value.connection === "string" && typeof value.model === "string") {
       return { kind: "api", connection: value.connection, model: value.model };
     }
     if (
@@ -185,9 +163,7 @@ export default function Command() {
   const modelKey = JSON.stringify(model.override);
 
   const loadChoices = (): Promise<RouteChoice[]> =>
-    suggester.current?.listRoutes
-      ? suggester.current.listRoutes(bundleId)
-      : Promise.resolve([]);
+    suggester.current?.listRoutes ? suggester.current.listRoutes(bundleId) : Promise.resolve([]);
   const lastError = useRef<string | undefined>(undefined);
   const copyDiagnostics = async () => {
     const report = await suggester.current!.diagnose({
@@ -211,13 +187,7 @@ export default function Command() {
         title="Choose AI Model…"
         icon={Icon.Stars}
         shortcut={{ modifiers: ["cmd"], key: "m" }}
-        target={
-          <ModelPicker
-            loadChoices={loadChoices}
-            current={model.override}
-            onChoose={model.choose}
-          />
-        }
+        target={<ModelPicker loadChoices={loadChoices} current={model.override} onChoose={model.choose} />}
       />
       <Action
         title="Copy Diagnostics"
@@ -260,10 +230,7 @@ export default function Command() {
         setAI({ query: debouncedQuery, modelKey, emojis: [], error: message });
         showToast({
           style: Toast.Style.Failure,
-          title:
-            error instanceof NoRouteError
-              ? "No AI model available"
-              : "AI emoji search failed",
+          title: error instanceof NoRouteError ? "No AI model available" : "AI emoji search failed",
           message,
         });
       })
@@ -273,14 +240,7 @@ export default function Command() {
     return () => {
       cancelled = true;
     };
-  }, [
-    debouncedQuery,
-    bundleId,
-    count,
-    modelKey,
-    model.ready,
-    minimizeThinking,
-  ]);
+  }, [debouncedQuery, bundleId, count, modelKey, model.ready, minimizeThinking]);
 
   const query = searchText.trim();
   const local = useMemo(() => searchLocal(query, 60), [query]);
@@ -294,8 +254,7 @@ export default function Command() {
     recents,
     aiTitle: ai.label ? `AI Suggestions · ${ai.label}` : "AI Suggestions",
   });
-  const waitingForAI =
-    query.length >= MIN_QUERY_LENGTH && (loading || !aiIsCurrent);
+  const waitingForAI = query.length >= MIN_QUERY_LENGTH && (loading || !aiIsCurrent);
 
   return (
     <Grid
@@ -332,11 +291,7 @@ export default function Command() {
               <Grid.Item
                 key={`${section.id}-${entry.emoji}`}
                 content={entry.emoji}
-                title={
-                  section.id === "ai"
-                    ? `${index + 1}. ${entry.name}`
-                    : entry.name
-                }
+                title={section.id === "ai" ? `${index + 1}. ${entry.name}` : entry.name}
                 keywords={entry.keywords}
                 actions={
                   <EmojiActions
@@ -364,38 +319,18 @@ function EmojiActions(props: {
   chooseModel: React.ReactNode;
 }) {
   const { entry, pasteFirst, onUse, onClearRecents, chooseModel } = props;
-  const paste = (
-    <Action.Paste
-      key="paste"
-      title="Paste Emoji"
-      content={entry.emoji}
-      onPaste={onUse}
-    />
-  );
-  const copy = (
-    <Action.CopyToClipboard
-      key="copy"
-      title="Copy Emoji"
-      content={entry.emoji}
-      onCopy={onUse}
-    />
-  );
+  const paste = <Action.Paste key="paste" title="Paste Emoji" content={entry.emoji} onPaste={onUse} />;
+  const copy = <Action.CopyToClipboard key="copy" title="Copy Emoji" content={entry.emoji} onCopy={onUse} />;
   return (
     <ActionPanel title={entry.name}>
-      <ActionPanel.Section>
-        {pasteFirst ? [paste, copy] : [copy, paste]}
-      </ActionPanel.Section>
+      <ActionPanel.Section>{pasteFirst ? [paste, copy] : [copy, paste]}</ActionPanel.Section>
       <ActionPanel.Section>{chooseModel}</ActionPanel.Section>
       <ActionPanel.Section>
-        <Action.CopyToClipboard
-          title="Copy Name"
-          content={entry.name}
-          shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
-        />
+        <Action.CopyToClipboard title="Copy Name" content={entry.name} shortcut={Keyboard.Shortcut.Common.CopyName} />
         <Action.CopyToClipboard
           title="Copy Shortcode"
           content={`:${entry.slug}:`}
-          shortcut={{ modifiers: ["cmd", "opt"], key: "c" }}
+          shortcut={{ modifiers: ["cmd", "opt"], key: "s" }}
         />
         {onClearRecents ? (
           <Action

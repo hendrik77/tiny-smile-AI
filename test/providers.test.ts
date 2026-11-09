@@ -29,7 +29,9 @@ describe("apiShape", () => {
     expect(apiShape(conn("anthropic", "https://api.anthropic.com"))).toBe("anthropic");
     expect(apiShape(conn("openAI", "https://API.openai.com/v1"))).toBe("openAIResponses");
     expect(apiShape(conn("openAI", "https://example.com/v1"))).toBe("openAICompatible");
-    expect(apiShape(conn("gemini", "https://generativelanguage.googleapis.com/v1beta/openai"))).toBe("openAICompatible");
+    expect(apiShape(conn("gemini", "https://generativelanguage.googleapis.com/v1beta/openai"))).toBe(
+      "openAICompatible",
+    );
     expect(apiShape(conn("openRouter", "https://openrouter.ai/api/v1"))).toBe("openAICompatible");
   });
 });
@@ -146,7 +148,13 @@ describe("buildHttpRequest", () => {
 
 describe("extractResponseText", () => {
   it("anthropic", () => {
-    const json = { content: [{ type: "thinking", text: "no" }, { type: "text", text: "a" }, { type: "text", text: "b" }] };
+    const json = {
+      content: [
+        { type: "thinking", text: "no" },
+        { type: "text", text: "a" },
+        { type: "text", text: "b" },
+      ],
+    };
     expect(extractResponseText("anthropic", json)).toBe("ab");
   });
   it("openAIResponses output_text", () => {
@@ -156,7 +164,14 @@ describe("extractResponseText", () => {
     const json = {
       output: [
         { type: "reasoning", content: [{ type: "output_text", text: "no" }] },
-        { type: "message", content: [{ type: "output_text", text: "x" }, { type: "refusal", text: "n" }, { type: "output_text", text: "y" }] },
+        {
+          type: "message",
+          content: [
+            { type: "output_text", text: "x" },
+            { type: "refusal", text: "n" },
+            { type: "output_text", text: "y" },
+          ],
+        },
       ],
     };
     expect(extractResponseText("openAIResponses", json)).toBe("xy");
@@ -165,7 +180,16 @@ describe("extractResponseText", () => {
     expect(extractResponseText("openAICompatible", { choices: [{ message: { content: "hey" } }] })).toBe("hey");
     expect(
       extractResponseText("openAICompatible", {
-        choices: [{ message: { content: [{ type: "text", text: "a" }, { type: "text", text: "b" }] } }],
+        choices: [
+          {
+            message: {
+              content: [
+                { type: "text", text: "a" },
+                { type: "text", text: "b" },
+              ],
+            },
+          },
+        ],
       }),
     ).toBe("ab");
   });
@@ -231,24 +255,51 @@ describe("CLI", () => {
   it("claude argv", () => {
     expect(buildCliInvocation("claude", "haiku", prompt)).toEqual({
       args: [
-        "-p", "--model", "haiku", "--output-format", "text", "--no-session-persistence",
-        "--disallowedTools", "*", "--max-turns", "1", "--system-prompt", "SYS", "USER",
+        "-p",
+        "--model",
+        "haiku",
+        "--output-format",
+        "text",
+        "--no-session-persistence",
+        "--disallowedTools",
+        "*",
+        "--max-turns",
+        "1",
+        "--system-prompt",
+        "SYS",
+        "USER",
       ],
     });
     expect(buildCliInvocation("claude", "", prompt).args).not.toContain("--model");
   });
   it("codex argv", () => {
     expect(buildCliInvocation("codex", "gpt-5", prompt).args).toEqual([
-      "exec", "--skip-git-repo-check", "--sandbox", "read-only", "--model", "gpt-5", "SYS\n\nUSER",
+      "exec",
+      "--skip-git-repo-check",
+      "--sandbox",
+      "read-only",
+      "--model",
+      "gpt-5",
+      "SYS\n\nUSER",
     ]);
     expect(buildCliInvocation("codex", "", prompt).args).toEqual([
-      "exec", "--skip-git-repo-check", "--sandbox", "read-only", "SYS\n\nUSER",
+      "exec",
+      "--skip-git-repo-check",
+      "--sandbox",
+      "read-only",
+      "SYS\n\nUSER",
     ]);
   });
   it("search paths", () => {
     expect(cliSearchPaths("/h")).toEqual([
-      "/h/.local/bin", "/h/.claude/local", "/opt/homebrew/bin", "/usr/local/bin",
-      "/h/.bun/bin", "/h/.volta/bin", "/h/.npm-global/bin", "/usr/bin",
+      "/h/.local/bin",
+      "/h/.claude/local",
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      "/h/.bun/bin",
+      "/h/.volta/bin",
+      "/h/.npm-global/bin",
+      "/usr/bin",
     ]);
   });
   it("findExecutable picks first existing", () => {
@@ -258,23 +309,33 @@ describe("CLI", () => {
   });
   it("callCli runs and trims", async () => {
     const exec: ExecFn = vi.fn(async () => ({ stdout: "  😀 \n", stderr: "" }));
-    const out = await callCli("claude", "haiku", prompt, { exec, home: "/h", exists: (p) => p === "/opt/homebrew/bin/claude" });
+    const out = await callCli("claude", "haiku", prompt, {
+      exec,
+      home: "/h",
+      exists: (p) => p === "/opt/homebrew/bin/claude",
+    });
     expect(out).toBe("😀");
     expect(exec).toHaveBeenCalledWith(
       "/opt/homebrew/bin/claude",
       buildCliInvocation("claude", "haiku", prompt).args,
-      expect.objectContaining({ timeoutMs: 90000, env: expect.objectContaining({ PATH: expect.stringContaining("/opt/homebrew/bin") }) }),
+      expect.objectContaining({
+        timeoutMs: 90000,
+        env: expect.objectContaining({ PATH: expect.stringContaining("/opt/homebrew/bin") }),
+      }),
     );
   });
   it("callCli passes PATH with search dirs, exec dir, then the existing PATH", async () => {
-    const exec = vi.fn(async (..._a: unknown[]) => ({ stdout: "x", stderr: "" })) as unknown as ExecFn;
+    const exec = vi.fn(async () => ({ stdout: "x", stderr: "" })) as unknown as ExecFn;
     await callCli("claude", "", prompt, {
       exec,
       home: "/h",
       exists: (p) => p === "/h/.nvm/x/claude" || p === "/usr/local/bin/claude",
       pathEnv: "/usr/bin:/custom/bin:/h/.local/bin",
     });
-    const opts = (exec as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2] as { env: { PATH: string }; timeoutMs: number };
+    const opts = (exec as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2] as {
+      env: { PATH: string };
+      timeoutMs: number;
+    };
     expect(opts.timeoutMs).toBe(90000);
     expect(opts.env.PATH).toBe(
       "/h/.local/bin:/h/.claude/local:/opt/homebrew/bin:/usr/local/bin:/h/.bun/bin:/h/.volta/bin:/h/.npm-global/bin:/usr/bin:/custom/bin",

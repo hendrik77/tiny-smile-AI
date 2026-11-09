@@ -1,7 +1,11 @@
 import { EMOJIS, findEmoji } from "./emoji-data";
 import type { EmojiEntry } from "./types";
 
-const splitWords = (s: string): string[] => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+const splitWords = (s: string): string[] =>
+  s
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
 
 interface Indexed {
   entry: EmojiEntry;

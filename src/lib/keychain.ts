@@ -24,9 +24,7 @@ export async function readApiKey(bundleId: string, connectionId: string, exec: E
     return v === null ? null : v.trim() || null;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `Could not read API key from the keychain (access may have been denied): ${detail}`,
-    );
+    throw new Error(`Could not read API key from the keychain (access may have been denied): ${detail}`);
   }
 }
 

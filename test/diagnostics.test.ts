@@ -77,7 +77,13 @@ describe("formatDiagnostics", () => {
 
   it("prints settingsError instead of keys, redacted", () => {
     const t = formatDiagnostics(
-      input({ rawKeys: undefined, settings: undefined, resolution: undefined, secrets: undefined, settingsError: "boom sk-secretsecret1" }),
+      input({
+        rawKeys: undefined,
+        settings: undefined,
+        resolution: undefined,
+        secrets: undefined,
+        settingsError: "boom sk-secretsecret1",
+      }),
     );
     expect(t).toContain("boom");
     expect(t).not.toContain("sk-secretsecret1");
@@ -130,14 +136,18 @@ describe("formatDiagnostics", () => {
   });
 
   it("shows failure reason", () => {
-    const t = formatDiagnostics(input({ resolution: { ok: false, reason: "No AI provider is set up." }, secrets: undefined }));
+    const t = formatDiagnostics(
+      input({ resolution: { ok: false, reason: "No AI provider is set up." }, secrets: undefined }),
+    );
     expect(t).toContain("No AI provider is set up.");
   });
 
   it("shows api key status and header names only", () => {
     expect(text).toContain("API key: found");
     expect(text).toContain("Custom headers: X-Org");
-    const t = formatDiagnostics(input({ secrets: { apiKey: "error", headerNames: [], error: "denied Bearer abcdefgh" } }));
+    const t = formatDiagnostics(
+      input({ secrets: { apiKey: "error", headerNames: [], error: "denied Bearer abcdefgh" } }),
+    );
     expect(t).toContain("API key: error");
     expect(t).toContain("denied");
     expect(t).not.toContain("abcdefgh");
@@ -145,12 +155,14 @@ describe("formatDiagnostics", () => {
 
   it("shows cli path or not found", () => {
     const route = { ok: true as const, route: { kind: "cli" as const, tool: "claude" as const, model: "" } };
-    expect(formatDiagnostics(input({ resolution: route, secrets: undefined, cli: { tool: "claude", path: "/opt/homebrew/bin/claude" } }))).toContain(
-      "Executable: /opt/homebrew/bin/claude",
-    );
-    expect(formatDiagnostics(input({ resolution: route, secrets: undefined, cli: { tool: "claude", path: null } }))).toContain(
-      "Executable: not found",
-    );
+    expect(
+      formatDiagnostics(
+        input({ resolution: route, secrets: undefined, cli: { tool: "claude", path: "/opt/homebrew/bin/claude" } }),
+      ),
+    ).toContain("Executable: /opt/homebrew/bin/claude");
+    expect(
+      formatDiagnostics(input({ resolution: route, secrets: undefined, cli: { tool: "claude", path: null } })),
+    ).toContain("Executable: not found");
   });
 
   it("shows speed, suggestions and last error redacted", () => {
@@ -158,14 +170,18 @@ describe("formatDiagnostics", () => {
     expect(text).toMatch(/Effort sent: low/);
     expect(text).toMatch(/Suggestions: 24/);
     expect(text).not.toContain("Last error");
-    const off = formatDiagnostics(input({ minimizeThinking: false, effort: null, lastError: "fail sk-abcdef123456 x" }));
+    const off = formatDiagnostics(
+      input({ minimizeThinking: false, effort: null, lastError: "fail sk-abcdef123456 x" }),
+    );
     expect(off).toMatch(/Minimize thinking: off/);
     expect(off).toMatch(/Effort sent: none/);
     expect(off).toContain("Last error: fail [redacted] x");
   });
 
   it("reports raycast AI", () => {
-    const t = formatDiagnostics(input({ raycastAI: true, rawKeys: undefined, settings: undefined, resolution: undefined, secrets: undefined }));
+    const t = formatDiagnostics(
+      input({ raycastAI: true, rawKeys: undefined, settings: undefined, resolution: undefined, secrets: undefined }),
+    );
     expect(t).toMatch(/Raycast AI: yes/);
   });
 
@@ -188,7 +204,9 @@ describe("formatDiagnostics", () => {
   });
 
   it("never contains secrets in any combination", () => {
-    const t = formatDiagnostics(input({ lastError: "x sk-live-ABCDEF123456", secrets: { apiKey: "found", headerNames: ["Authorization"] } }));
+    const t = formatDiagnostics(
+      input({ lastError: "x sk-live-ABCDEF123456", secrets: { apiKey: "found", headerNames: ["Authorization"] } }),
+    );
     expect(t).not.toContain("sk-live");
   });
 });

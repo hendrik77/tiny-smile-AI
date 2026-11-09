@@ -52,7 +52,11 @@ describe("parsePlistXML", () => {
     ).toEqual([`<a> & "q" 's' AB`]);
   });
   it("skips comments and nested structures", () => {
-    expect(parsePlistXML(wrap("<!-- hi --><dict><key>k</key><array><dict><key>z</key><integer>-1</integer></dict></array></dict>"))).toEqual({
+    expect(
+      parsePlistXML(
+        wrap("<!-- hi --><dict><key>k</key><array><dict><key>z</key><integer>-1</integer></dict></array></dict>"),
+      ),
+    ).toEqual({
       k: [{ z: -1 }],
     });
   });

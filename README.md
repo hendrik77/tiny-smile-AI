@@ -16,7 +16,7 @@ mood and slang.
   thinking, and as a fallback when there's no AI.
 - **Recently Used** when the search field is empty.
 - **Enter** pastes the emoji into the app you came from. You can also copy the emoji (or set copy
-  as the default action), copy its name (⌘⇧C) or its `:shortcode:` (⌘⌥C).
+  as the default action), copy its name (⌘⇧.) or its `:shortcode:` (⌘⌥S).
 - **Choose AI Model… (⌘M)** lets emoji search use a different model than your Tinycast chat:
   every enabled Tinycast connection and model is listed, with "Tinycast Default" on top. The
   choice is remembered. Pick something small and fast (Claude Haiku, GPT-4.1 mini, Gemini Flash)
@@ -64,12 +64,12 @@ When the extension runs in Raycast itself, it uses Raycast AI.
 
 ### Settings
 
-| Preference | Default | What it does |
-| --- | --- | --- |
-| Tinycast Channel | Tinycast | Read settings from Tinycast, Tinycast Beta or Tinycast Dev |
-| AI Suggestions | 24 | How many emojis to ask for (12–48). Fewer means a shorter answer, so it arrives sooner |
-| Speed | On | Ask thinking models to think as little as possible (see below) |
-| Primary Action | Paste | Whether Enter pastes or copies |
+| Preference       | Default  | What it does                                                                           |
+| ---------------- | -------- | -------------------------------------------------------------------------------------- |
+| Tinycast Channel | Tinycast | Read settings from Tinycast, Tinycast Beta or Tinycast Dev                             |
+| AI Suggestions   | 24       | How many emojis to ask for (12–48). Fewer means a shorter answer, so it arrives sooner |
+| Speed            | On       | Ask thinking models to think as little as possible (see below)                         |
+| Primary Action   | Paste    | Whether Enter pastes or copies                                                         |
 
 ### Speed
 
@@ -111,7 +111,21 @@ npm run typecheck
 ```
 
 ```bash
+npm run lint
+```
+
+```bash
+npm run format
+```
+
+```bash
 npx ray build -e dist -o dist
+```
+
+Run everything CI runs (lint, typecheck, tests, build) in one go:
+
+```bash
+npm run check
 ```
 
 The code is split into small, dependency-injected modules under `src/lib/` (dataset, local search,

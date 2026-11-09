@@ -27,13 +27,13 @@ Tinycast runs Raycast-API extensions in an embedded runtime, but `AI.ask` there 
 (`Scripts/raycast-runtime/src/api/index.js` in Tinycast). So the extension reads Tinycast's own
 AI configuration and calls the model itself:
 
-| What | Where Tinycast keeps it | How the extension reads it |
-| --- | --- | --- |
-| Connections (`[AIConnection]` JSON: id, name, provider, baseURL, models) | `UserDefaults` key `aiConnections` (Data) | `defaults export <bundle id> -` → plist XML → base64 → JSON |
-| Default model (`AIModelSelection` JSON, e.g. `{"api":{"connection":UUID,"model":"…"}}`) | `aiDefaultModel` (Data) | same |
-| Routes switched off | `aiDisabledRoutes` (`["api:<UUID>", "claude", …]`) | same |
-| API keys | Keychain generic password, service `<bundle id>.ai-api-keys`, account = connection UUID | `security find-generic-password -s … -a … -w` |
-| Custom request headers | Keychain `<bundle id>.ai-request-headers` (JSON object) | same |
+| What                                                                                    | Where Tinycast keeps it                                                                 | How the extension reads it                                  |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Connections (`[AIConnection]` JSON: id, name, provider, baseURL, models)                | `UserDefaults` key `aiConnections` (Data)                                               | `defaults export <bundle id> -` → plist XML → base64 → JSON |
+| Default model (`AIModelSelection` JSON, e.g. `{"api":{"connection":UUID,"model":"…"}}`) | `aiDefaultModel` (Data)                                                                 | same                                                        |
+| Routes switched off                                                                     | `aiDisabledRoutes` (`["api:<UUID>", "claude", …]`)                                      | same                                                        |
+| API keys                                                                                | Keychain generic password, service `<bundle id>.ai-api-keys`, account = connection UUID | `security find-generic-password -s … -a … -w`               |
+| Custom request headers                                                                  | Keychain `<bundle id>.ai-request-headers` (JSON object)                                 | same                                                        |
 
 Bundle id: `com.tinycast.app` (stable), `com.tinycast.app.beta`, `com.tinycast.app.dev` — a
 preference picks the channel.

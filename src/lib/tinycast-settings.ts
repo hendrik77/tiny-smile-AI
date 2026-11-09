@@ -178,7 +178,11 @@ export function resolveRoute(settings: TinycastAISettings, override?: RouteOverr
   if (override?.kind === "api") {
     const c = connections.find((x) => x.id === override.connection);
     if (c && enabled(`api:${c.id}`)) return { ok: true, route: { kind: "api", connection: c, model: override.model } };
-  } else if (override?.kind === "cli" && enabled(override.tool) && (on.includes(override.tool) || def?.kind === override.tool)) {
+  } else if (
+    override?.kind === "cli" &&
+    enabled(override.tool) &&
+    (on.includes(override.tool) || def?.kind === override.tool)
+  ) {
     return { ok: true, route: { kind: "cli", tool: override.tool, model: override.model } };
   }
 
