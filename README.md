@@ -88,7 +88,9 @@ How long a search takes depends almost entirely on the model:
 ## Troubleshooting
 
 - **"No AI model available"**: add an API connection in Tinycast → Settings → AI → Providers, or
-  switch on the Claude/Codex tool there. Name search keeps working without AI.
+  switch on the Claude/Codex tool there. Name search keeps working without AI. When Tinycast's
+  default is Apple Intelligence, the extension falls back to your first API connection, then to
+  the installed Claude tool, then Codex; use **Choose AI Model… (⌘M)** to pick one explicitly.
 - **"Could not read API key from the keychain"**: you denied Keychain access. Run the search again
   and choose **Always Allow**.
 - **"Couldn't find the `claude` command"**: the extension looks in `~/.local/bin`,

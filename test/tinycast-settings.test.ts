@@ -29,11 +29,11 @@ describe("decodeAISettings", () => {
     expect(s.disabledRoutes).toEqual(["api:X", "claude"]);
   });
   it("is tolerant of missing/invalid values", () => {
-    expect(decodeAISettings({})).toEqual({ connections: [], defaultModel: null, disabledRoutes: [] });
-    expect(decodeAISettings(null)).toEqual({ connections: [], defaultModel: null, disabledRoutes: [] });
+    expect(decodeAISettings({})).toEqual({ connections: [], defaultModel: null, disabledRoutes: [], enabledInstalledProviders: [] });
+    expect(decodeAISettings(null)).toEqual({ connections: [], defaultModel: null, disabledRoutes: [], enabledInstalledProviders: [] });
     expect(
       decodeAISettings({ aiConnections: data("garbage"), aiDefaultModel: "x", aiDisabledRoutes: "y" }),
-    ).toEqual({ connections: [], defaultModel: null, disabledRoutes: [] });
+    ).toEqual({ connections: [], defaultModel: null, disabledRoutes: [], enabledInstalledProviders: [] });
   });
   it("drops invalid connections and defaults models", () => {
     const s = decodeAISettings({
@@ -91,6 +91,7 @@ describe("listRouteChoices", () => {
     connections: [],
     defaultModel: null,
     disabledRoutes: [],
+    enabledInstalledProviders: [],
     ...o,
   });
   it("returns [] for empty settings", () => {
@@ -154,7 +155,7 @@ describe("readTinycastAISettings", () => {
     };
     const s = await readTinycastAISettings("com.tinycast.app", exec);
     expect(calls).toEqual([["/usr/bin/defaults", ["export", "com.tinycast.app", "-"]]]);
-    expect(s).toEqual({ connections: [], defaultModel: { kind: "appleIntelligence" }, disabledRoutes: ["codex"] });
+    expect(s).toEqual({ connections: [], defaultModel: { kind: "appleIntelligence" }, disabledRoutes: ["codex"], enabledInstalledProviders: [] });
   });
   it("throws a helpful error when defaults fails", async () => {
     const exec: ExecFn = async () => {
@@ -171,6 +172,7 @@ describe("resolveRoute", () => {
     connections: [],
     defaultModel: null,
     disabledRoutes: [],
+    enabledInstalledProviders: [],
     ...o,
   });
   it("uses an enabled api default even if the model is not listed", () => {
@@ -217,7 +219,7 @@ describe("resolveRoute", () => {
     expect(resolveRoute(base({ defaultModel: { kind: "appleIntelligence" } }))).toEqual({
       ok: false,
       reason:
-        "Apple Intelligence can't be used by extensions. Add an API connection in Tinycast → Settings → AI → Providers.",
+        "Apple Intelligence can't be used by extensions. Add an API connection or switch on the Claude or Codex tool in Tinycast → Settings → AI → Providers.",
     });
     const g = resolveRoute(base({ defaultModel: { kind: "grok", model: "x" } }));
     expect(g.ok).toBe(false);
@@ -238,6 +240,7 @@ describe("resolveRoute with override", () => {
     connections: [],
     defaultModel: null,
     disabledRoutes: [],
+    enabledInstalledProviders: [],
     ...o,
   });
   const c1 = conn(C1), c2 = conn(C2, ["z"]);
@@ -261,7 +264,7 @@ describe("resolveRoute with override", () => {
     expect(resolveRoute(base({ connections: [c1], defaultModel: def }), null)).toEqual(expected);
   });
   it("supports cli overrides when enabled", () => {
-    const s = base({ connections: [c1], defaultModel: def });
+    const s = base({ connections: [c1], defaultModel: def, enabledInstalledProviders: ["codex"] });
     expect(resolveRoute(s, { kind: "cli", tool: "codex", model: "g" })).toEqual({
       ok: true,
       route: { kind: "cli", tool: "codex", model: "g" },
@@ -270,5 +273,139 @@ describe("resolveRoute with override", () => {
       ok: true,
       route: { kind: "api", connection: c1, model: "m1" },
     });
+  });
+});
+
+const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64");
+
+describe("aiInstalledProviders decoding", () => {
+  it("decodes the enabled installed tools", () => {
+    expect(decodeAISettings({ aiInstalledProviders: data(["claude", "codex"]) }).enabledInstalledProviders).toEqual(["claude", "codex"]);
+  });
+  it("is tolerant of garbage and a missing key", () => {
+    expect(decodeAISettings({ aiInstalledProviders: data("garbage") }).enabledInstalledProviders).toEqual([]);
+    expect(decodeAISettings({ aiInstalledProviders: "x" }).enabledInstalledProviders).toEqual([]);
+    expect(decodeAISettings({ aiInstalledProviders: data({ a: 1 }) }).enabledInstalledProviders).toEqual([]);
+    expect(decodeAISettings({}).enabledInstalledProviders).toEqual([]);
+  });
+  it("drops non-string entries", () => {
+    expect(decodeAISettings({ aiInstalledProviders: data(["claude", 3, null]) }).enabledInstalledProviders).toEqual(["claude"]);
+  });
+  it("reads the key from the plist", async () => {
+    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>aiInstalledProviders</key><data>${b64(["claude"])}</data></dict></plist>`;
+    const s = await readTinycastAISettings("x", async () => ({ stdout: plist, stderr: "" }));
+    expect(s.enabledInstalledProviders).toEqual(["claude"]);
+  });
+});
+
+describe("resolveRoute with installed tools", () => {
+  const base = (o: Partial<TinycastAISettings>): TinycastAISettings => ({
+    connections: [],
+    defaultModel: { kind: "appleIntelligence" },
+    disabledRoutes: [],
+    enabledInstalledProviders: [],
+    ...o,
+  });
+  it("Apple default + claude installed -> claude CLI default model", () => {
+    expect(resolveRoute(base({ enabledInstalledProviders: ["claude"] }))).toEqual({
+      ok: true,
+      route: { kind: "cli", tool: "claude", model: "" },
+    });
+  });
+  it("Apple default + API connection + claude installed -> API wins", () => {
+    const c = conn(C1, ["m1"]);
+    expect(resolveRoute(base({ connections: [c], enabledInstalledProviders: ["claude"] }))).toEqual({
+      ok: true,
+      route: { kind: "api", connection: c, model: "m1" },
+    });
+  });
+  it("falls back to codex when only codex is enabled; claude preferred over codex", () => {
+    expect(resolveRoute(base({ enabledInstalledProviders: ["codex"] }))).toEqual({
+      ok: true,
+      route: { kind: "cli", tool: "codex", model: "" },
+    });
+    expect(resolveRoute(base({ enabledInstalledProviders: ["codex", "claude"] }))).toEqual({
+      ok: true,
+      route: { kind: "cli", tool: "claude", model: "" },
+    });
+  });
+  it("skips fallback tools listed in disabledRoutes", () => {
+    const r = resolveRoute(base({ enabledInstalledProviders: ["claude", "codex"], disabledRoutes: ["claude"] }));
+    expect(r).toEqual({ ok: true, route: { kind: "cli", tool: "codex", model: "" } });
+  });
+  it("claude default not enabled-installed while the key is present falls forward", () => {
+    const def = { kind: "claude", model: "sonnet" } as const;
+    expect(resolveRoute(base({ defaultModel: def, enabledInstalledProviders: ["codex"] }))).toEqual({
+      ok: true,
+      route: { kind: "cli", tool: "codex", model: "" },
+    });
+    const c = conn(C1, ["m1"]);
+    expect(resolveRoute(base({ defaultModel: def, connections: [c], enabledInstalledProviders: ["codex"] }))).toEqual({
+      ok: true,
+      route: { kind: "api", connection: c, model: "m1" },
+    });
+  });
+  it("claude default enabled-installed is used with its model", () => {
+    expect(resolveRoute(base({ defaultModel: { kind: "claude", model: "sonnet" }, enabledInstalledProviders: ["claude"] }))).toEqual({
+      ok: true,
+      route: { kind: "cli", tool: "claude", model: "sonnet" },
+    });
+  });
+  it("cli override valid when the tool is enabled-installed or is the default's tool", () => {
+    const ov = { kind: "cli", tool: "claude", model: "opus" } as const;
+    expect(resolveRoute(base({ enabledInstalledProviders: ["claude"] }), ov)).toEqual({
+      ok: true,
+      route: { kind: "cli", tool: "claude", model: "opus" },
+    });
+    expect(resolveRoute(base({ defaultModel: { kind: "claude", model: "s" } }), ov)).toEqual({
+      ok: true,
+      route: { kind: "cli", tool: "claude", model: "opus" },
+    });
+    expect(resolveRoute(base({}), ov).ok).toBe(false);
+  });
+  it("uses the new Apple message and still fails with nothing configured", () => {
+    const r = resolveRoute(base({}));
+    expect(r).toEqual({
+      ok: false,
+      reason:
+        "Apple Intelligence can't be used by extensions. Add an API connection or switch on the Claude or Codex tool in Tinycast → Settings → AI → Providers.",
+    });
+    expect(resolveRoute(base({ defaultModel: null })).ok).toBe(false);
+  });
+});
+
+describe("listRouteChoices with installed tools", () => {
+  const base = (o: Partial<TinycastAISettings>): TinycastAISettings => ({
+    connections: [],
+    defaultModel: { kind: "appleIntelligence" },
+    disabledRoutes: [],
+    enabledInstalledProviders: [],
+    ...o,
+  });
+  it("lists claude default model and aliases; default flag on the resolved one", () => {
+    const r = listRouteChoices(base({ enabledInstalledProviders: ["claude"] }));
+    expect(r.map((x) => x.id)).toEqual(["cli:claude:", "cli:claude:haiku", "cli:claude:sonnet", "cli:claude:opus"]);
+    expect(r.every((x) => x.source === "Claude Code")).toBe(true);
+    expect(r.map((x) => x.isDefault)).toEqual([true, false, false, false]);
+    expect(r[0].override).toEqual({ kind: "cli", tool: "claude", model: "" });
+  });
+  it("lists codex default plus the default's codex model", () => {
+    const r = listRouteChoices(base({ defaultModel: { kind: "codex", model: "gpt-5" }, enabledInstalledProviders: ["codex"] }));
+    expect(r.map((x) => x.id)).toEqual(["cli:codex:gpt-5", "cli:codex:"]);
+    expect(r.map((x) => x.isDefault)).toEqual([true, false]);
+    expect(r.every((x) => x.source === "Codex")).toBe(true);
+  });
+  it("includes the default claude model exactly once", () => {
+    const odd = listRouteChoices(base({ defaultModel: { kind: "claude", model: "claude-x" }, enabledInstalledProviders: ["claude"] }));
+    expect(odd.map((x) => x.model)).toEqual(["claude-x", "", "haiku", "sonnet", "opus"]);
+    expect(odd.filter((x) => x.isDefault).map((x) => x.model)).toEqual(["claude-x"]);
+    const known = listRouteChoices(base({ defaultModel: { kind: "claude", model: "sonnet" }, enabledInstalledProviders: ["claude"] }));
+    expect(known.map((x) => x.model)).toEqual(["", "haiku", "sonnet", "opus"]);
+    expect(known.filter((x) => x.isDefault).map((x) => x.model)).toEqual(["sonnet"]);
+  });
+  it("omits tools that are not enabled or are disabled", () => {
+    expect(listRouteChoices(base({}))).toEqual([]);
+    expect(listRouteChoices(base({ enabledInstalledProviders: ["claude"], disabledRoutes: ["claude"] }))).toEqual([]);
   });
 });

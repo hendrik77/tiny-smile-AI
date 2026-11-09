@@ -64,7 +64,7 @@ const CLI_TITLES = { claude: "Claude Code", codex: "Codex" } as const;
 const CACHE_VERSION = "v2";
 
 export function routeLabel(route: AIRoute): string {
-  if (route.kind === "cli") return `${CLI_TITLES[route.tool]} · ${route.model}`;
+  if (route.kind === "cli") return `${CLI_TITLES[route.tool]} · ${route.model || "default model"}`;
   const name = route.connection.name.trim() || PROVIDER_TITLES[route.connection.provider];
   return `${name} · ${route.model}`;
 }

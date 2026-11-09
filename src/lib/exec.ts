@@ -7,7 +7,12 @@ export const execFileAsync: ExecFn = (file, args, options) =>
     const child = execFile(
       file,
       args,
-      { maxBuffer: 10 * 1024 * 1024, timeout: options?.timeoutMs ?? 30000, encoding: "utf8" },
+      {
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: options?.timeoutMs ?? 30000,
+        encoding: "utf8",
+        ...(options?.env ? { env: { ...process.env, ...options.env } } : {}),
+      },
       (error, stdout, stderr) => {
         const out = String(stdout ?? "");
         const err = String(stderr ?? "");
