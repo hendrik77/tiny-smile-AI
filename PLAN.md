@@ -195,3 +195,46 @@ checked into the repo, so it can be regenerated.
 
 Suggested order: launcher argument and selected text first (small, and they remove typing from
 the most frequent uses); the built-in table last (most work).
+
+### Tone switch next to the search field
+
+A dropdown in the grid's search bar (Tinycast supports `Grid.Dropdown`) with "Any", "Work",
+"Casual" and "Playful". The choice is added to the prompt and to the cache key, and it is
+remembered between launches.
+
+### Ready-made combinations
+
+Ask the AI for two or three short sequences as well (for "birthday": 🎉🥳🍾), shown in their own
+"Combinations" section and pasted as one. The answer format changes from a plain array to an
+object with `emojis` and `combos`; the parser keeps accepting the plain array.
+
+### Paste in the format the app expects
+
+A choice of what gets inserted: the emoji itself, a Slack or GitHub shortcode (`:tada:`), or a
+gitmoji code for commit messages. Needs the real Slack/GitHub name lists (gemoji), because the
+Unicode-based slugs used by "Copy Shortcode" today don't always match.
+
+### Search memory: recent and most-asked searches
+
+Today's cache is keyed by model and query and only makes a repeat fast. Add a second, long-lived
+store that learns which searches are asked most, and keeps their answers.
+
+- **Two tiers.** A small _recent_ tier (the last 20 searches) and a _frequent_ tier (up to 200
+  searches, configurable). A search enters the recent tier when it is first answered and is
+  promoted to the frequent tier the second time it is asked. This keeps one-off searches from
+  pushing out established ones.
+- **What an entry holds.** The normalized query, its emojis, the model that answered, a use
+  count, and the time it was last used.
+- **What counts as a use.** Asking the search counts once; picking an emoji from it counts
+  double, because that shows the answer was useful.
+- **Eviction.** When the frequent tier is full, drop the entry with the lowest score. The score
+  is the use count with a time decay (halved every 30 days without use), so old habits fade and
+  the store ends up holding the searches asked most over time.
+- **Where it shows.** Answers from the store appear instantly, for any model, before the AI is
+  asked. The empty screen lists "Frequent Searches" and "Recent Searches"; picking one fills the
+  search field.
+- **Control.** Actions "Refresh Suggestions" (ask the AI again and replace the stored answer),
+  "Forget This Search" and "Clear Search Memory".
+- **Storage.** `LocalStorage`, one JSON document, because Raycast's `Cache` may evict entries on
+  its own. The store logic is a pure module with unit tests for promotion, scoring, decay and
+  eviction.
