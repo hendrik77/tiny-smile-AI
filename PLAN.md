@@ -125,3 +125,39 @@ extension has a real icon.
    - README Development section lists the new scripts.
 
 Done when `npm run check` is green locally and the CI workflow file is on the branch.
+
+## Future versions
+
+Not scheduled yet. Each item comes from the project review after 1.0.0.
+
+### Stop depending on Tinycast's internals
+
+The extension reads Tinycast's private preference keys (`aiConnections`, `aiDefaultModel`,
+`aiDisabledRoutes`, `aiInstalledProviders`) and its Keychain items. A Tinycast update can rename
+any of them and break the extension without warning.
+
+- Open an issue (or pull request) at `abue-ammar/tinycast` asking for `AI.ask` support in the
+  extension runtime, backed by Tinycast's own provider layer.
+- The extension already uses `AI.ask` whenever `environment.canAccess(AI)` is true, so it would
+  switch over without a code change. That would also remove the Keychain prompt and make Apple
+  Intelligence, Grok, OpenCode and Cursor usable.
+- Until then: keep the settings reader, and use the Copy Diagnostics key list to spot renamed
+  keys early.
+
+### Waste fewer AI calls and fail faster
+
+- Every typing pause of 450 ms sends a paid request, and a request for an outdated query still
+  runs to the end. Wait longer after longer queries, and reuse a request that is already in
+  flight for the same query.
+- The Claude Code and Codex tools get up to 90 seconds before a search gives up. Cut the timeout
+  to about 20 seconds with a clear message that suggests a faster model.
+- Say in the README that what is typed is sent to the configured AI provider.
+
+### Measure and improve the suggestions
+
+- The prompt has never been evaluated. Collect about 30 sample searches with emojis that should
+  appear, run them against a real model, and tune the prompt and the default count from the
+  results. Keep the samples as a repeatable script, outside the unit tests because it needs a key.
+- Skin-tone preference: the prompt currently forbids skin tones; apply the chosen tone to emojis
+  that support one.
+- Rank emojis that are picked often higher, in both the AI and the name sections.
