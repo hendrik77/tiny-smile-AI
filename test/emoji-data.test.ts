@@ -47,3 +47,11 @@ describe("getEmojiBySlugOrName", () => {
     expect(getEmojiBySlugOrName("nope_nothing")).toBeUndefined();
   });
 });
+
+describe("skinTone flag", () => {
+  it("is a boolean on every entry", () => {
+    for (const e of EMOJIS) expect(typeof e.skinTone).toBe("boolean");
+    expect(findEmoji("👋")!.skinTone).toBe(true);
+    expect(findEmoji("🔥")!.skinTone).toBe(false);
+  });
+});

@@ -1,7 +1,7 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "tiny-smile-ai",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Tiny Smile AI",
   "description": "AI emoji search for Tinycast: describe a mood or situation and pick from fitting emojis suggested by your Tinycast AI model.",
   "icon": "icon.png",
@@ -16,6 +16,21 @@
       "title": "AI Emoji Search",
       "subtitle": "Tiny Smile AI",
       "description": "Find the best fitting emoji for any situation using the AI model configured in Tinycast.",
+      "mode": "view",
+      "arguments": [
+        {
+          "name": "query",
+          "type": "text",
+          "placeholder": "Mood or situation",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "emoji-for-selection",
+      "title": "AI Emoji for Selected Text",
+      "subtitle": "Tiny Smile AI",
+      "description": "Suggest emojis that fit the text selected in the frontmost app.",
       "mode": "view"
     }
   ],
@@ -94,6 +109,62 @@
           "value": "copy"
         }
       ]
+    },
+    {
+      "name": "skinTone",
+      "type": "dropdown",
+      "required": false,
+      "title": "Skin Tone",
+      "description": "Skin tone applied to emojis that support one.",
+      "default": "none",
+      "data": [
+        {
+          "title": "Default (Yellow)",
+          "value": "none"
+        },
+        {
+          "title": "Light",
+          "value": "light"
+        },
+        {
+          "title": "Medium-Light",
+          "value": "medium-light"
+        },
+        {
+          "title": "Medium",
+          "value": "medium"
+        },
+        {
+          "title": "Medium-Dark",
+          "value": "medium-dark"
+        },
+        {
+          "title": "Dark",
+          "value": "dark"
+        }
+      ]
+    },
+    {
+      "name": "language",
+      "type": "dropdown",
+      "required": false,
+      "title": "Name Search Language",
+      "description": "Extra language for the instant name matches. English is always searched.",
+      "default": "system",
+      "data": [
+        {
+          "title": "System Language",
+          "value": "system"
+        },
+        {
+          "title": "English Only",
+          "value": "en"
+        },
+        {
+          "title": "Deutsch",
+          "value": "de"
+        }
+      ]
     }
   ],
   "dependencies": {
@@ -104,6 +175,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-test-renderer": "^19.3.1",
+    "emojibase-data": "^18.0.0",
     "emojilib": "^4.0.3",
     "eslint": "^9.39.5",
     "prettier": "^3.9.10",

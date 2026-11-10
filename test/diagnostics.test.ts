@@ -210,3 +210,19 @@ describe("formatDiagnostics", () => {
     expect(t).not.toContain("sk-live");
   });
 });
+
+describe("name search section", () => {
+  it("reports language, system locale and skin tone", () => {
+    const out = formatDiagnostics(input({ language: "de", systemLocale: "de-DE", skinTone: "medium" }));
+    expect(out).toContain("## Name search");
+    expect(out).toContain("Language: de");
+    expect(out).toContain("System locale: de-DE");
+    expect(out).toContain("Skin tone: medium");
+  });
+  it("says unknown when the locale is missing and defaults the rest", () => {
+    const out = formatDiagnostics(input());
+    expect(out).toContain("System locale: unknown");
+    expect(out).toContain("Language: en");
+    expect(out).toContain("Skin tone: none");
+  });
+});

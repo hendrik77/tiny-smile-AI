@@ -16,6 +16,9 @@ export interface DiagnosticsInput {
   resultCount: number;
   lastError?: string;
   raycastAI: boolean;
+  language?: string;
+  systemLocale?: string;
+  skinTone?: string;
 }
 
 const MASK = "[redacted]";
@@ -130,6 +133,11 @@ export function formatDiagnostics(input: DiagnosticsInput): string {
     out.push(`Effort sent: ${input.effort ?? "none"}`);
   }
   out.push(`Suggestions: ${input.resultCount}`);
+
+  section("Name search");
+  out.push(`Language: ${input.language ?? "en"}`);
+  out.push(`System locale: ${input.systemLocale || "unknown"}`);
+  out.push(`Skin tone: ${input.skinTone ?? "none"}`);
 
   if (input.lastError) {
     section("Last error");

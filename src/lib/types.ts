@@ -12,7 +12,12 @@ export interface EmojiEntry {
   group: string;
   /** Lower-case search keywords (from emojilib), without the slug itself. */
   keywords: string[];
+  /** True when the dataset marks the emoji as supporting Fitzpatrick skin tone modifiers. */
+  skinTone: boolean;
 }
+
+/** User preference for skin tone; "none" keeps the default yellow emoji. */
+export type SkinTone = "none" | "light" | "medium-light" | "medium" | "medium-dark" | "dark";
 
 /** Tinycast's `AIProviderKind` raw values. */
 export type ProviderKind = "openAI" | "anthropic" | "gemini" | "openRouter" | "openAICompatible";

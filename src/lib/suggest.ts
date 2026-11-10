@@ -49,6 +49,9 @@ export interface DiagnoseOptions {
   count: number;
   extensionVersion: string;
   lastError?: string;
+  language?: string;
+  systemLocale?: string;
+  skinTone?: string;
 }
 
 export interface SuggestResult {
@@ -74,6 +77,7 @@ export function createSuggester(deps: SuggesterDeps) {
   const memory = new Map<string, string>();
   const routes = new Map<string, Promise<PreparedRoute>>();
   const settingsMemo = new Map<string, Promise<DetailedSettings>>();
+  const inFlight = new Map<string, Promise<SuggestResult>>();
   const secrets = new Map<string, Promise<{ apiKey: string | null; headers: Record<string, string> }>>();
 
   /** Memoized per bundle id; a failed read is retried on the next call. */
@@ -189,11 +193,19 @@ export function createSuggester(deps: SuggesterDeps) {
     const cached = readCache(cacheKey);
     if (cached && cached.length > 0) return { emojis: cached, routeLabel: route.label };
 
-    const answer = await route.ask(buildEmojiPrompt(query.trim(), count), minimize);
-    const emojis = parseSuggestions(answer, count);
-    if (emojis.length === 0) throw new Error("The AI didn't suggest any emoji for this search.");
-    writeCache(cacheKey, emojis);
-    return { emojis, routeLabel: route.label };
+    const running = inFlight.get(cacheKey);
+    if (running) return running;
+    const request = (async () => {
+      const answer = await route.ask(buildEmojiPrompt(query.trim(), count), minimize);
+      const emojis = parseSuggestions(answer, count);
+      if (emojis.length === 0) throw new Error("The AI didn't suggest any emoji for this search.");
+      writeCache(cacheKey, emojis);
+      return { emojis, routeLabel: route.label };
+    })();
+    inFlight.set(cacheKey, request);
+    const forget = () => inFlight.delete(cacheKey);
+    request.then(forget, forget);
+    return request;
   }
 
   /** The models the user can pick from; empty inside Raycast, where the model is fixed. */
@@ -214,6 +226,9 @@ export function createSuggester(deps: SuggesterDeps) {
       resultCount: options.count,
       lastError: options.lastError,
       raycastAI: Boolean(deps.raycastAsk),
+      language: options.language,
+      systemLocale: options.systemLocale,
+      skinTone: options.skinTone,
     };
     try {
       if (deps.raycastAsk) return formatDiagnostics(base);

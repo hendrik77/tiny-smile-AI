@@ -29,4 +29,15 @@ describe("execFileAsync", () => {
   it("rejects when the binary is missing", async () => {
     await expect(execFileAsync("/nonexistent/bin", [])).rejects.toThrow();
   });
+  it("flags a timeout with timedOut = true", async () => {
+    const err = await execFileAsync(process.execPath, ["-e", "setTimeout(()=>{}, 5000)"], { timeoutMs: 200 }).catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error & { timedOut?: boolean }).timedOut).toBe(true);
+  });
+  it("does not flag ordinary failures as timeouts", async () => {
+    const err = await execFileAsync(process.execPath, ["-e", "process.exit(3)"]).catch((e) => e);
+    expect((err as Error & { timedOut?: boolean }).timedOut).toBeFalsy();
+  });
 });

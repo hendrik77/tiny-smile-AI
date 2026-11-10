@@ -319,7 +319,7 @@ describe("CLI", () => {
       "/opt/homebrew/bin/claude",
       buildCliInvocation("claude", "haiku", prompt).args,
       expect.objectContaining({
-        timeoutMs: 90000,
+        timeoutMs: 20000,
         env: expect.objectContaining({ PATH: expect.stringContaining("/opt/homebrew/bin") }),
       }),
     );
@@ -336,7 +336,7 @@ describe("CLI", () => {
       env: { PATH: string };
       timeoutMs: number;
     };
-    expect(opts.timeoutMs).toBe(90000);
+    expect(opts.timeoutMs).toBe(20000);
     expect(opts.env.PATH).toBe(
       "/h/.local/bin:/h/.claude/local:/opt/homebrew/bin:/usr/local/bin:/h/.bun/bin:/h/.volta/bin:/h/.npm-global/bin:/usr/bin:/custom/bin",
     );
@@ -444,5 +444,83 @@ describe("callApi effort retry", () => {
     const f = seq([401, "no"]);
     await expect(callApi(c, "m", prompt, "K", {}, f, "low")).rejects.toThrow(/401/);
     expect(f).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CLI timeout message", () => {
+  const timedOut: ExecFn = async () => {
+    throw Object.assign(new Error("killed"), { timedOut: true });
+  };
+  it("names the tool and the limit", async () => {
+    await expect(callCli("claude", "m", prompt, { exec: timedOut, home: "/h", exists: () => true })).rejects.toThrow(
+      "The Claude Code tool took longer than 20 seconds. Pick a faster model with ⌘M or add an API connection.",
+    );
+    await expect(callCli("codex", "m", prompt, { exec: timedOut, home: "/h", exists: () => true })).rejects.toThrow(
+      /^The Codex tool took longer than 20 seconds\./,
+    );
+  });
+  it("keeps other failures as they are", async () => {
+    const exec: ExecFn = async () => {
+      throw new Error("boom");
+    };
+    await expect(callCli("claude", "m", prompt, { exec, home: "/h", exists: () => true })).rejects.toThrow("boom");
+  });
+});
+
+describe("callApi timeout", () => {
+  const c = conn("openAICompatible", "https://x.test/v1");
+  const ok = JSON.stringify({ choices: [{ message: { content: "😀" } }] });
+  const msg = "The AI didn't answer within 30 seconds. Pick a faster model with ⌘M.";
+  const never = (): FetchFn => vi.fn(() => new Promise(() => {})) as unknown as FetchFn;
+
+  it("rejects when the fetch never settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = callApi(c, "m", prompt, "K", {}, never());
+      const assertion = expect(p).rejects.toThrow(msg);
+      await vi.advanceTimersByTimeAsync(30000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("uses an injected timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = callApi(c, "m", prompt, "K", {}, never(), null, 1000);
+      const assertion = expect(p).rejects.toThrow(/within 1 second|within 30 seconds/);
+      await vi.advanceTimersByTimeAsync(1000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("clears the timer when the fetch settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = vi.fn(async () => ({ ok: true, status: 200, text: async () => ok })) as unknown as FetchFn;
+      await expect(callApi(c, "m", prompt, "K", {}, f)).resolves.toBe("😀");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("gives each attempt its own timeout when retrying without effort", async () => {
+    vi.useFakeTimers();
+    try {
+      let n = 0;
+      const f = vi.fn(() => {
+        n++;
+        if (n === 1)
+          return new Promise((r) => setTimeout(() => r({ ok: false, status: 400, text: async () => "bad" }), 20000));
+        return Promise.resolve({ ok: true, status: 200, text: async () => ok });
+      }) as unknown as FetchFn;
+      const p = callApi(c, "m", prompt, "K", {}, f, "low");
+      await vi.advanceTimersByTimeAsync(20000);
+      await expect(p).resolves.toBe("😀");
+      expect(f).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

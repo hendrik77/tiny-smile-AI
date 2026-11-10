@@ -1,3 +1,4 @@
+import { API_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./request-policy";
 import type { AIConnection, EmojiPrompt, ExecFn, FetchFn } from "./types";
 
 export type ApiShape = "anthropic" | "openAIResponses" | "openAICompatible";
@@ -179,11 +180,23 @@ export async function callApi(
   extraHeaders: Record<string, string>,
   fetchFn: FetchFn,
   effort: string | null = null,
+  timeoutMs: number = API_TIMEOUT_MS,
 ): Promise<string> {
-  const send = async (e: string | null) => {
+  // Tinycast's fetch bridge cannot abort a request in flight, so race it against a timer instead.
+  const seconds = Math.round(timeoutMs / 1000);
+  const message = `The AI didn't answer within ${seconds} second${seconds === 1 ? "" : "s"}. Pick a faster model with ⌘M.`;
+  const send = (e: string | null) => {
     const { url, init } = buildHttpRequest(conn, model, prompt, apiKey, extraHeaders, e);
-    const r = await fetchFn(url, init);
-    return { res: r, text: await r.text() };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+    const request = (async () => {
+      const r = await fetchFn(url, init);
+      return { res: r, text: await r.text() };
+    })();
+    request.catch(() => {}); // a late failure after the timeout must not go unhandled
+    return Promise.race([request, timeout]).finally(() => clearTimeout(timer));
   };
   let { res, text } = await send(effort);
   // Some providers/models reject the reasoning field: retry once without it.
@@ -276,11 +289,22 @@ export async function callCli(
     ...(deps.pathEnv ?? process.env.PATH ?? "").split(":"),
   ].filter(Boolean);
   const env = { PATH: [...new Set(dirs)].join(":") };
-  const { stdout } = await deps.exec(
-    file,
-    args,
-    input === undefined ? { timeoutMs: 90000, env } : { timeoutMs: 90000, env, input },
-  );
+  let stdout: string;
+  try {
+    ({ stdout } = await deps.exec(
+      file,
+      args,
+      input === undefined ? { timeoutMs: TOOL_TIMEOUT_MS, env } : { timeoutMs: TOOL_TIMEOUT_MS, env, input },
+    ));
+  } catch (err) {
+    if ((err as { timedOut?: boolean } | null)?.timedOut) {
+      const name = tool === "claude" ? "Claude Code" : "Codex";
+      throw new Error(
+        `The ${name} tool took longer than ${Math.round(TOOL_TIMEOUT_MS / 1000)} seconds. Pick a faster model with ⌘M or add an API connection.`,
+      );
+    }
+    throw err;
+  }
   const out = stdout.trim();
   if (!out) throw new Error(EMPTY_ANSWER);
   return out;
