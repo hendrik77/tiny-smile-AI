@@ -26,32 +26,51 @@ export function useDebounced(value: string, delay: number): string {
   return value === "" ? "" : debounced;
 }
 
+/** Recents and usage are written only after the stored value was read; earlier changes are merged in then. */
 export function useRecents() {
   const [recents, setRecents] = useState<EmojiEntry[]>([]);
+  const loaded = useRef(false);
+  const settled = useRef(false);
+  /** Remembered before the stored list was read, newest first. */
+  const pending = useRef<EmojiEntry[]>([]);
   useEffect(() => {
-    LocalStorage.getItem<string>(RECENTS_KEY).then((raw) => {
+    const finish = (raw: string | undefined) => {
+      if (settled.current) return;
+      let stored: EmojiEntry[] = [];
       try {
         const list: unknown = raw ? JSON.parse(raw) : [];
         if (Array.isArray(list)) {
-          setRecents(
-            list.map((e) => (typeof e === "string" ? findEmoji(e) : undefined)).filter(Boolean) as EmojiEntry[],
-          );
+          stored = list.map((e) => (typeof e === "string" ? findEmoji(e) : undefined)).filter(Boolean) as EmojiEntry[];
         }
       } catch {
         // A garbled list is simply forgotten.
       }
-    });
+      loaded.current = true;
+      const queued = pending.current;
+      pending.current = [];
+      if (queued.length === 0) return setRecents(stored);
+      const seen = new Set<string>();
+      const merged = [...queued, ...stored].filter((e) => !seen.has(e.emoji) && !!seen.add(e.emoji));
+      const next = merged.slice(0, MAX_RECENTS);
+      setRecents(next);
+      LocalStorage.setItem(RECENTS_KEY, JSON.stringify(next.map((e) => e.emoji)));
+    };
+    LocalStorage.getItem<string>(RECENTS_KEY).then(finish, () => finish(undefined));
   }, []);
 
   function remember(entry: EmojiEntry) {
+    if (!loaded.current) pending.current = [entry, ...pending.current.filter((e) => e.emoji !== entry.emoji)];
     setRecents((current) => {
       const next = [entry, ...current.filter((e) => e.emoji !== entry.emoji)].slice(0, MAX_RECENTS);
-      LocalStorage.setItem(RECENTS_KEY, JSON.stringify(next.map((e) => e.emoji)));
+      if (loaded.current) LocalStorage.setItem(RECENTS_KEY, JSON.stringify(next.map((e) => e.emoji)));
       return next;
     });
   }
 
   function clear() {
+    // Clearing before the read finished must not be undone by it.
+    settled.current = true;
+    pending.current = [];
     setRecents([]);
     LocalStorage.removeItem(RECENTS_KEY);
   }
@@ -61,16 +80,28 @@ export function useRecents() {
 
 export function useUsage() {
   const [usage, setUsage] = useState<UsageStore>({});
+  const loaded = useRef(false);
+  /** Uses before the stored counts were read: [emoji, time], oldest first. */
+  const pending = useRef<[string, number][]>([]);
   useEffect(() => {
-    LocalStorage.getItem<string>(USAGE_KEY)
-      .then((raw) => setUsage((current) => ({ ...parseUsageStore(raw), ...current })))
-      .catch(() => {});
+    const finish = (raw: string | undefined) => {
+      let store = parseUsageStore(raw);
+      const queued = pending.current;
+      pending.current = [];
+      loaded.current = true;
+      for (const [emoji, at] of queued) store = recordUse(store, emoji, at);
+      setUsage(store);
+      if (queued.length > 0) LocalStorage.setItem(USAGE_KEY, JSON.stringify(store));
+    };
+    LocalStorage.getItem<string>(USAGE_KEY).then(finish, () => finish(undefined));
   }, []);
 
   function record(emoji: string) {
+    const at = Date.now();
+    if (!loaded.current) pending.current.push([emoji, at]);
     setUsage((current) => {
-      const next = recordUse(current, emoji, Date.now());
-      LocalStorage.setItem(USAGE_KEY, JSON.stringify(next));
+      const next = recordUse(current, emoji, at);
+      if (loaded.current) LocalStorage.setItem(USAGE_KEY, JSON.stringify(next));
       return next;
     });
   }
@@ -196,8 +227,9 @@ export function useModelOverride() {
   });
   useEffect(() => {
     LocalStorage.getItem<string>(MODEL_KEY)
-      .then((raw) => setState({ ready: true, override: parseOverride(raw) }))
-      .catch(() => setState({ ready: true, override: null }));
+      // A choice made before the stored one was read wins.
+      .then((raw) => setState((s) => (s.ready ? s : { ready: true, override: parseOverride(raw) })))
+      .catch(() => setState((s) => (s.ready ? s : { ready: true, override: null })));
   }, []);
 
   function choose(override: RouteOverride | null) {

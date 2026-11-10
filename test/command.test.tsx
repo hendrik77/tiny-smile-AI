@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
   listRoutes: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
   diagnose: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
   copy: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
+  /** While set, LocalStorage reads wait for it (but see the value as of the call). */
+  gate: undefined as Promise<void> | undefined,
 }));
 
 vi.mock("@raycast/api", async () => {
@@ -76,7 +78,11 @@ vi.mock("@raycast/api", async () => {
     AI: { ask: vi.fn() },
     Cache,
     LocalStorage: {
-      getItem: async (k: string) => h.store.get(k),
+      getItem: async (k: string) => {
+        const value = h.store.get(k);
+        if (h.gate) await h.gate;
+        return value;
+      },
       setItem: async (k: string, v: string) => void h.store.set(k, v),
       removeItem: async (k: string) => void h.store.delete(k),
     },
@@ -147,6 +153,7 @@ const answer = { emojis: [findEmoji("🎉")!, findEmoji("🥳")!], routeLabel: "
 beforeEach(async () => {
   vi.useFakeTimers();
   h.store.clear();
+  h.gate = undefined;
   h.prefs.primaryAction = "paste";
   delete h.prefs.useSelection;
   h.selected.mockReset();
@@ -1406,6 +1413,176 @@ describe("built-in answers and search memory", () => {
       await mount();
       expect(action(items()[0], "Choose AI Model…")).toBeTruthy();
       expect(action(items()[0], "Copy Diagnostics")).toBeTruthy();
+    });
+  });
+
+  describe("state written before LocalStorage has loaded", () => {
+    const hold = () => {
+      let open!: () => void;
+      h.gate = new Promise<void>((resolve) => (open = resolve));
+      return async () => {
+        h.gate = undefined;
+        open();
+        await flush();
+      };
+    };
+
+    it("a pick before the stored recents are read keeps them", async () => {
+      h.store.set("recent-emojis", JSON.stringify(["🔥"]));
+      const release = hold();
+      await mount();
+      await type("party");
+      await paste("🎉");
+      await release();
+      expect(JSON.parse(h.store.get("recent-emojis")!)).toEqual(["🎉", "🔥"]);
+      await type("");
+      expect(sections()[0].contents).toEqual(["🎉", "🔥"]);
+    });
+
+    it("a pick before the stored usage is read keeps the stored counts", async () => {
+      h.store.set("emoji-usage", JSON.stringify({ "🔥": { count: 5, last: Date.now() } }));
+      const release = hold();
+      await mount();
+      await type("party");
+      await paste("🎉");
+      await release();
+      const usage = JSON.parse(h.store.get("emoji-usage")!);
+      expect(Object.keys(usage).sort()).toEqual(["🎉", "🔥"].sort());
+      expect(usage["🔥"].count).toBeCloseTo(5, 3);
+    });
+
+    it("a model chosen before the stored choice is read wins over it", async () => {
+      h.store.set("model-override", JSON.stringify(haiku));
+      const release = hold();
+      await mount();
+      const target = renderer.root.findAllByType("action-push" as never)[0].props.target as React.ReactElement<{
+        onChoose: (o: unknown) => void;
+      }>;
+      const sonnet = routeChoices[0].override;
+      act(() => target.props.onChoose(sonnet));
+      await release();
+      await type(Q);
+      await advance(700);
+      expect(h.suggest).toHaveBeenCalledWith(Q, expect.objectContaining({ override: sonnet }));
+      expect(JSON.parse(h.store.get("model-override")!)).toEqual(sonnet);
+    });
+
+    it("clearing the recents before they are read keeps them cleared", async () => {
+      h.store.set("recent-emojis", JSON.stringify(["🔥"]));
+      const release = hold();
+      await mount();
+      await type("party");
+      await paste("🎉");
+      await press(action(items()[0], "Clear Recently Used"));
+      await release();
+      await type("");
+      expect(sections()).toEqual([]);
+      expect(h.store.has("recent-emojis")).toBe(false);
+    });
+  });
+
+  it("a pick from selected text does not count for a remembered search", async () => {
+    preset([], [entry(Q, ["🔥"], { last: 5 })]);
+    h.selected.mockResolvedValue(Q);
+    await mount();
+    await flush();
+    expect(sections()[0].contents).toEqual(["🔥"]);
+    await paste("🔥");
+    expect(stored().frequent).toEqual([entry(Q, ["🔥"], { last: 5 })]);
+  });
+
+  describe("mount", () => {
+    it("asks once, with the stored tone, when the dropdown reports it right after the first commit", async () => {
+      act(() => {
+        renderer = TestRenderer.create(
+          <Command {...({ arguments: { query: Q } } as React.ComponentProps<typeof Command>)} />,
+        );
+      });
+      act(() => accessory().props.onChange("work"));
+      await flush();
+      await advance(1000);
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      expect(h.suggest).toHaveBeenCalledWith(Q, expect.objectContaining({ tone: "work" }));
+    });
+
+    it("asks once for a selection while memory and model load", async () => {
+      h.selected.mockResolvedValue(Q);
+      await mount();
+      await advance(1000);
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("search memory and tone", () => {
+    const setTone = (t: string) => act(() => accessory().props.onChange(t));
+
+    it("does not use a remembered answer under another tone: the AI is asked with that tone", async () => {
+      preset([], [entry(Q, ["🔥"])]);
+      await mount();
+      setTone("work");
+      await type(Q);
+      expect(sections().flatMap((x) => x.contents)).not.toContain("🔥");
+      await advance(700);
+      await flush();
+      expect(h.suggest).toHaveBeenCalledWith(Q, expect.objectContaining({ tone: "work" }));
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+    });
+
+    it("shows the remembered answer again when the tone goes back to any", async () => {
+      preset([], [entry(Q, ["🔥"])]);
+      await mount();
+      setTone("work");
+      await search(Q);
+      setTone("any");
+      await advance(700);
+      await flush();
+      expect(sections()[0].contents).toEqual(["🔥"]);
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+    });
+
+    it("neither records nor replaces answers produced under another tone", async () => {
+      await mount();
+      setTone("playful");
+      await search(Q);
+      expect(h.store.get("search-memory")).toBeUndefined();
+      const before = JSON.stringify(entry(Q, ["🔥"], { last: 5 }));
+      preset([], [JSON.parse(before)]);
+      await remount();
+      setTone("playful");
+      await search(Q);
+      expect(stored().frequent).toEqual([JSON.parse(before)]);
+    });
+
+    it("does not count picks under another tone", async () => {
+      preset([], [entry(Q, ["🔥"], { last: 5 })]);
+      await mount();
+      setTone("work");
+      await search(Q);
+      await paste("🥳");
+      expect(stored().frequent).toEqual([entry(Q, ["🔥"], { last: 5 })]);
+    });
+
+    it("does not replace the stored answer when refreshing under another tone", async () => {
+      preset([], [entry(Q, ["🔥"], { last: 5 })]);
+      await mount();
+      setTone("casual");
+      await search(Q);
+      await press(action(items()[0], "Refresh Suggestions"));
+      await flush();
+      expect(h.suggest).toHaveBeenLastCalledWith(Q, expect.objectContaining({ tone: "casual", refresh: true }));
+      expect(stored().frequent).toEqual([entry(Q, ["🔥"], { last: 5 })]);
+    });
+
+    it("keeps the search tiles and asks the AI with the tone when one is chosen", async () => {
+      preset([entry(Q, ["🔥"])]);
+      await mount();
+      setTone("work");
+      const tile = items().find((i) => i.props.title === `Search · ${Q}`)!;
+      expect(tile).toBeTruthy();
+      await press(action(tile, "Show Results"));
+      await flush();
+      expect(h.suggest).toHaveBeenCalledWith(Q, expect.objectContaining({ tone: "work" }));
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
     });
   });
 

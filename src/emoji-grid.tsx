@@ -80,12 +80,13 @@ interface LocalAnswer {
 const resolveAll = (list: string[]): EmojiEntry[] =>
   list.map((e) => findEmoji(e)).filter((e): e is EmojiEntry => e !== undefined);
 
-/** An answer that needs no AI: a remembered search, else (for tone "any") the built-in table. */
+/** An answer that needs no AI: for tone "any" only, a remembered search, else the built-in table. */
 function localAnswer(
   query: string,
   o: { memory: SearchMemory | null; builtin: boolean; tone: Tone; forced: boolean },
 ): LocalAnswer | null {
-  if (o.forced || query.length < MIN_QUERY_LENGTH) return null;
+  // Remembered and built-in answers are tone-neutral: with another tone the AI is asked (and caches per tone).
+  if (o.forced || o.tone !== "any" || query.length < MIN_QUERY_LENGTH) return null;
   const hit = o.memory ? lookupMemory(o.memory, query) : null;
   if (hit) {
     const emojis = resolveAll(hit.emojis);
@@ -94,7 +95,7 @@ function localAnswer(
       return { source: "memory", emojis, combos, label: hit.model, entry: hit };
     }
   }
-  if (o.builtin && o.tone === "any") {
+  if (o.builtin) {
     const emojis = lookupBuiltin(query);
     if (emojis) return { source: "builtin", emojis, combos: [], label: "Built-in" };
   }
@@ -253,7 +254,7 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
     }
     if (forcedQuery.current !== requestQuery) forcedQuery.current = null;
     // Captured now: the request belongs to the text it was made for, whatever is typed later.
-    const recordable = memoryOn && !(!typed && querySource === "selection");
+    const recordable = memoryOn && tone === "any" && !(!typed && querySource === "selection");
     const local = localAnswer(requestQuery, {
       memory: memoryOn ? memory.current() : null,
       builtin: useBuiltin,
@@ -345,8 +346,8 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
   const refresh = () => {
     const asked = query;
     if (asked.length < MIN_QUERY_LENGTH || refreshing) return;
-    const recordable = memoryOn && !fromSelection;
     const askedTone = tone;
+    const recordable = memoryOn && askedTone === "any" && !fromSelection;
     const askedKey = modelKey;
     setRefreshing(true);
     suggester.current!(asked, {
@@ -361,7 +362,7 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
       .then((result) => {
         lastError.current = undefined;
         forcedQuery.current = asked;
-        if (recordable || (memoryOn && lookupMemory(memory.current(), asked))) {
+        if (memoryOn && askedTone === "any" && (recordable || lookupMemory(memory.current(), asked))) {
           memory.update((m) =>
             replaceAnswer(
               m,
@@ -458,12 +459,13 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
         remember(entry);
         record(entry.emoji);
       });
-      if (memoryOn && query.length >= MIN_QUERY_LENGTH) {
+      // Picks count only for tone "any" and never for selected text.
+      if (memoryOn && tone === "any" && !fromSelection && query.length >= MIN_QUERY_LENGTH) {
         const now = Date.now();
         memory.update((m) => {
           if (lookupMemory(m, query)) return recordPick(m, query, now);
           // A built-in answer the user picked from becomes a remembered search (never from selected text).
-          if (answerSource !== "builtin" || fromSelection) return m;
+          if (answerSource !== "builtin") return m;
           const emojis = shownEmojis.map((e) => e.emoji);
           return recordPick(recordAnswer(m, { query, emojis, model: "Built-in" }, now), query, now);
         });

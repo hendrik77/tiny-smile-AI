@@ -52,7 +52,7 @@ mood and slang.
 - **Built-in answers**: about 265 very common searches in English and German ("thanks", "birthday",
   "sorry", "hungry", "danke" …) are answered at once from a table that ships with the extension.
   No AI is asked, so they cost nothing and work without any AI set up. They are only used with the
-  tone "Any" (the table is tone-neutral). Press **Refresh Suggestions (⌘R)** to ask the AI anyway.
+  tone "Any" (the table is tone-neutral), as are remembered searches (see below). Press **Refresh Suggestions (⌘R)** to ask the AI anyway.
   Turn them off with the **Built-in Answers** preference.
 - **Search memory**: the extension remembers your searches and their answers. A search you ask
   again is shown at once, without calling the AI. The start screen lists them after the recents:
@@ -61,7 +61,9 @@ mood and slang.
   removes one, **Clear Search Memory** removes all. A search enters the memory when the AI has
   answered it; the second time you ask it, it moves to the frequent searches, and picking an
   emoji counts double. What is stored: your searches and their answers, on this Mac only, in the
-  extension's local storage. Selected text is never stored (it is not a deliberate search). Turn
+  extension's local storage. Like the built-in answers, the memory applies only to the tone "Any":
+  with another tone, remembered answers are not used (the AI is asked, with that tone) and
+  nothing is stored or counted. Selected text is never stored (it is not a deliberate search). Turn
   it off with the **Search Memory** preference; then nothing is read, stored or shown.
 - **Refresh Suggestions (⌘R)**: asks the AI again for the current search, ignoring the remembered
   and built-in answer and the cache, and replaces what is shown (and stored). If it fails, the
@@ -104,7 +106,8 @@ extension reads the AI setup Tinycast already has and calls that model itself:
      (Ollama, LM Studio, and others).
    - **Installed tools**: `claude` (Claude Code) and `codex`.
 3. If the default is something an extension can't reach (Apple Intelligence, Grok, OpenCode,
-   Cursor), it falls back to your first enabled API connection.
+   Cursor), it falls back to your first enabled API connection, then to an installed Claude
+   Code or Codex tool.
 4. Routes you switched off in Tinycast stay off.
 
 API keys are read from the login Keychain, where Tinycast stores them (one item per connection).

@@ -192,11 +192,12 @@ tested without macOS, Tinycast or network.
   skips the cache read, still writes) and replaces the stored answer.
 - **Diagnostics:** answer source, memory counts and built-in table size, never query texts.
 
-Recording rule as built: the AI answer of a typed, argument or chosen query is recorded when it
+Recording rule as built (tone "any" only; with another tone nothing is recorded, replaced or
+counted): the AI answer of a typed, argument or chosen query is recorded when it
 arrives (`recordAnswer`); a remembered answer that stays shown for the debounced request counts as
 one more ask, once per visit and query; Refresh calls `replaceAnswer`; a pick calls `recordPick`
 (a picked built-in answer is first recorded with model "Built-in"). Selected text is never
-recorded or counted.
+recorded or counted, and a pick from a selected-text query does not count either.
 
 ## 1.3.0 implementation concepts
 
@@ -212,8 +213,11 @@ Shared rules, all following from the Tinycast constraints above:
 - An answer has one source, tried in this order: **search memory → built-in table → cache → AI**.
   Memory and built-in answers do not call the AI. **Refresh Suggestions (⌘R)** asks the AI for the
   current query and replaces what is shown and stored. A fresh AI answer for the query on screen
-  is shown before the local ones (so a refreshed built-in answer stays replaced). Search memory
-  ignores the tone; only the built-in table is limited to tone "any".
+  is shown before the local ones (so a refreshed built-in answer stays replaced). **Search memory
+  and the built-in table both apply only to tone "any"**: with another tone a remembered answer is
+  not used (the AI path runs and caches per tone), and answers are not recorded or replaced, and
+  picks, Refresh and "stay" asks do not count. The search tiles on the empty screen still show;
+  choosing one with another tone asks the AI with that tone.
 
 **Multi-pick (item 3)** — `src/lib/tray.ts`, pure: `add`, `removeLast`, `clear`, `sequence`, max
 12 entries, duplicates allowed. **Add to Selection** is ⌥⏎ and keeps the grid open. While the
