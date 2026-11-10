@@ -44,6 +44,8 @@ export interface SuggestOptions {
   tone?: Tone;
   /** Also ask for combinations of 2 to 4 emojis (default false). */
   combos?: boolean;
+  /** Skip reading the cached answer (the new answer is still cached). */
+  refresh?: boolean;
 }
 
 export interface DiagnoseOptions {
@@ -212,7 +214,7 @@ export function createSuggester(deps: SuggesterDeps) {
     const tone = parseTone(options.tone);
     const combos = options.combos === true;
     const cacheKey = `${CACHE_VERSION}|${route.key}|${minimize ? "min" : "full"}|${count}|${tone}|${combos ? "combos" : "plain"}|${normalized}`;
-    const cached = readCache(cacheKey);
+    const cached = options.refresh ? undefined : readCache(cacheKey);
     if (cached && cached.emojis.length > 0) return { ...cached, routeLabel: route.label };
 
     const running = inFlight.get(cacheKey);

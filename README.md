@@ -17,8 +17,9 @@ mood and slang.
 - **Tinycast does not show section titles in grids.** The titles "AI Suggestions · <model>",
   "Matching Names" and "Recently Used" only appear in Raycast. In Tinycast the numbering marks the
   AI picks, and the **search bar placeholder** tells you what you are looking at: "Emojis for
-  “…”" for a launcher argument, "Emojis for selected text “…”" for a selection, "Recently used"
-  for the recents. The model in use is visible via **Choose AI Model… (⌘M)** and in **Copy
+  “…”" for a launcher argument, "Emojis for selected text “…”" for a selection, "Results for “…”"
+  for a remembered search you opened, "Recently used" and "your searches" for the start screen, and
+  "Selection: …" while you collect several emojis. The model in use is visible via **Choose AI Model… (⌘M)** and in **Copy
   Diagnostics (⌘⇧D)**; the section title with the model name only shows in Raycast.
 - **Selected text**: when the command starts without an argument, the selection of the frontmost
   app (read through the macOS Accessibility API) becomes the first search, and the AI request
@@ -34,14 +35,45 @@ mood and slang.
   argument, the selected text is not read.
 - **Skin tone** and **name search in your language** (German so far) via the settings below, and
   emojis you pick often move up within the name matches.
-- **Recently used** emojis when the search field is empty.
+- **Recently used** emojis when the search field is empty, followed by your remembered searches
+  (see Search memory).
+- **Pick several emojis** (⌥⏎): **Add to Selection** puts the emoji in a small selection (up to 12,
+  repeats allowed) and keeps the grid open. The selection is shown in the search bar placeholder
+  ("Selection: 🎉🥳 — ⌥⏎ adds, ⏎ pastes"). While it is not empty, the first action is **Paste
+  Selection** (then **Copy Selection**, **Remove Last from Selection** with ⌘⌫, **Clear
+  Selection**). Pasting or copying it counts every emoji as used and empties it.
+- **Tone**: the dropdown next to the search field (Any, Work, Casual, Playful) tells the AI what
+  register to aim for. It is remembered, and a different tone asks again.
+- **Insert As**: paste and copy the emoji itself, a GitHub `:tada:` shortcode or a Slack one, for
+  apps that expect codes. An emoji without a code in the chosen set is inserted as the emoji.
+- **Combinations**: besides single emojis the AI suggests up to three short sequences ("🎉🥳🍾"
+  for "birthday"). Each is a tile whose title starts with "Combo ·"; Enter pastes the whole
+  sequence. Turn it off with the **Combinations** preference.
+- **Built-in answers**: about 265 very common searches in English and German ("thanks", "birthday",
+  "sorry", "hungry", "danke" …) are answered at once from a table that ships with the extension.
+  No AI is asked, so they cost nothing and work without any AI set up. They are only used with the
+  tone "Any" (the table is tone-neutral). Press **Refresh Suggestions (⌘R)** to ask the AI anyway.
+  Turn them off with the **Built-in Answers** preference.
+- **Search memory**: the extension remembers your searches and their answers. A search you ask
+  again is shown at once, without calling the AI. The start screen lists them after the recents:
+  one tile per search, showing its first emoji, titled "Search · …". **Show Results** opens it
+  (type to search something else, **Back to Start** to return), **Forget This Search** (⌃X)
+  removes one, **Clear Search Memory** removes all. A search enters the memory when the AI has
+  answered it; the second time you ask it, it moves to the frequent searches, and picking an
+  emoji counts double. What is stored: your searches and their answers, on this Mac only, in the
+  extension's local storage. Selected text is never stored (it is not a deliberate search). Turn
+  it off with the **Search Memory** preference; then nothing is read, stored or shown.
+- **Refresh Suggestions (⌘R)**: asks the AI again for the current search, ignoring the remembered
+  and built-in answer and the cache, and replaces what is shown (and stored). If it fails, the
+  previous tiles stay and a message tells you why.
 - **Enter** pastes the emoji into the app you came from. You can also copy the emoji (or set copy
   as the default action), copy its name (⌘⇧.) or its `:shortcode:` (⌘⌥S).
 - **Choose AI Model… (⌘M)** lets emoji search use a different model than your Tinycast chat:
   every enabled Tinycast connection and model is listed, with "Tinycast Default" on top. The
   choice is remembered. Pick something small and fast (Claude Haiku, GPT-4.1 mini, Gemini Flash)
   and keep your big model for chat.
-- Answers are cached per search, so repeating a search is instant and costs nothing.
+- Answers are cached per search, so repeating a search is instant and costs nothing. **Refresh
+  Suggestions** bypasses the cache.
 
 ## Install
 
@@ -93,6 +125,24 @@ When the extension runs in Raycast itself, it uses Raycast AI.
 | Skin Tone            | Default  | Skin tone applied to emojis that support one (shown, pasted and copied)                |
 | Name Search Language | System   | Extra language for the instant name matches (English is always searched)               |
 | Selected Text        | On       | Use the selection (up to 300 characters) as the first search when the command starts   |
+| Insert As            | Emoji    | What Paste and Copy insert: the emoji, a GitHub shortcode or a Slack shortcode         |
+| Combinations         | On       | Also ask the AI for a few ready-made emoji sequences                                   |
+| Built-in Answers     | On       | Answer common searches from the built-in table, without the AI (tone "Any" only)       |
+| Search Memory        | On       | Remember your searches and their answers on this Mac; show and reuse them              |
+
+### Shortcuts
+
+| Shortcut | Action                                                                      |
+| -------- | --------------------------------------------------------------------------- |
+| ⏎        | Paste the emoji (or the selection, when there is one); copy if you chose it |
+| ⌥⏎       | Add to Selection                                                            |
+| ⌘⌫       | Remove Last from Selection                                                  |
+| ⌘R       | Refresh Suggestions                                                         |
+| ⌃X       | Forget This Search (on a search tile)                                       |
+| ⌘M       | Choose AI Model…                                                            |
+| ⌘⇧D      | Copy Diagnostics                                                            |
+| ⌘⇧.      | Copy Name                                                                   |
+| ⌘⌥S      | Copy Shortcode (or Copy Emoji, with Insert As set to a shortcode)           |
 
 ### Speed
 
@@ -117,8 +167,11 @@ What you type is sent to the AI provider configured in Tinycast (or run through 
 Code / Codex tool). With **Selected Text** on, the selection of the frontmost app is read when the
 command starts and sent the same way, like typed text, but only when it is at most 300 characters
 long; a longer selection is ignored and never sent. Turn the preference off to avoid this
-altogether. Nothing is read when you give the command an argument. Name search, recents and usage ranking stay
-on your Mac.
+altogether. Nothing is read when you give the command an argument. Answers from the built-in table
+and from search memory send nothing to the AI. Name search, recents, usage ranking and search
+memory stay on your Mac: search memory keeps the searches you typed (or gave as an argument) and
+their answers in the extension's local storage, never the selected text. **Clear Search Memory**
+deletes it, and the **Search Memory** preference stops it.
 
 ## Troubleshooting
 
@@ -133,7 +186,8 @@ on your Mac.
   `~/.npm-global/bin` and `/usr/bin`.
 
 - **Report a problem**: press **⌘⇧D** (Copy Diagnostics) in the grid and paste the result into a
-  GitHub issue. The report contains no API keys or header values, only names, hosts and model ids.
+  GitHub issue. The report contains no API keys or header values, only names, hosts and model ids,
+  and counts for the search memory, never the searches themselves.
 
 ## Development
 

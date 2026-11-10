@@ -1,6 +1,6 @@
 # Tiny Smile AI — plan
 
-Status: **1.2.0 released** (on `main`). Open work is listed under "Open work"; everything above it
+Status: **1.3.0 ready** (1.2.0 released on `main`). Open work is listed under "Open work"; everything above it
 describes what exists.
 
 ## Goal (the finished result)
@@ -177,9 +177,30 @@ tested without macOS, Tinycast or network.
 - **Docs corrected:** the model name is not visible in Tinycast's grid, only in Raycast, via ⌘M
   and in the diagnostics.
 
+### 1.3.0
+
+- **Multi-pick** (⌥⏎ Add to Selection, Paste/Copy Selection, tray in the placeholder), **tone
+  dropdown**, **Insert As** (emoji, GitHub or Slack shortcode), **combinations** (`{emojis, combos}`
+  answer format, "Combo · …" tiles).
+- **Answer sources** in the order search memory → built-in table (tone "any" only) → cache → AI.
+  Local answers show at once, without the debounce and without an AI call.
+- **Built-in answers:** 265 searches in English and German (`src/data/builtin.json`).
+- **Search memory:** recent and frequent tiers in `LocalStorage` (`search-memory`), "Search · …"
+  tiles after the recents, Show Results, Forget This Search (⌃X), Clear Search Memory, Back to
+  Start. Never fed by selected text.
+- **Refresh Suggestions** (⌘R) forces the AI path for the shown query (`SuggestOptions.refresh`
+  skips the cache read, still writes) and replaces the stored answer.
+- **Diagnostics:** answer source, memory counts and built-in table size, never query texts.
+
+Recording rule as built: the AI answer of a typed, argument or chosen query is recorded when it
+arrives (`recordAnswer`); a remembered answer that stays shown for the debounced request counts as
+one more ask, once per visit and query; Refresh calls `replaceAnswer`; a pick calls `recordPick`
+(a picked built-in answer is first recorded with model "Built-in"). Selected text is never
+recorded or counted.
+
 ## 1.3.0 implementation concepts
 
-Covers open items 3 to 8. Items 1 (needs an API key) and 2 (needs Tinycast) stay open. Built
+Design record for the 1.3.0 features (formerly open items 3 to 8; items 1 and 2 stay open). Built
 test-first by sub-agents: pure library modules in parallel, then the UI in two steps.
 
 Shared rules, all following from the Tinycast constraints above:
@@ -190,7 +211,9 @@ Shared rules, all following from the Tinycast constraints above:
   query_, exactly like a launcher argument.
 - An answer has one source, tried in this order: **search memory → built-in table → cache → AI**.
   Memory and built-in answers do not call the AI. **Refresh Suggestions (⌘R)** asks the AI for the
-  current query and replaces what is shown and stored.
+  current query and replaces what is shown and stored. A fresh AI answer for the query on screen
+  is shown before the local ones (so a refreshed built-in answer stays replaced). Search memory
+  ignores the tone; only the built-in table is limited to tone "any".
 
 **Multi-pick (item 3)** — `src/lib/tray.ts`, pure: `add`, `removeLast`, `clear`, `sequence`, max
 12 entries, duplicates allowed. **Add to Selection** is ⌥⏎ and keeps the grid open. While the
@@ -200,7 +223,8 @@ placeholder shows `Selection: 🎉🥳 — ⌥⏎ adds, ⏎ pastes`. Each emoji 
 
 **Tone (item 4)** — `Tone = "any" | "work" | "casual" | "playful"`. `buildEmojiPrompt` takes the
 tone and adds one line to the system prompt; "any" leaves the prompt unchanged. The tone is part
-of the cache key. UI: a `Grid.Dropdown` in the search bar with `storeValue`.
+of the cache key. UI: a `Grid.Dropdown` in the search bar with `storeValue`; the grid starts with
+"any" and Tinycast reports the stored choice through `onChange` on the first commit.
 
 **Insert format (item 5)** — `scripts/build-shortcodes.mjs` generates `src/data/shortcodes.json`
 from emojibase-data (`github.json`, and `iamcal.json` for Slack): emoji → `[github, slack]`.
@@ -226,17 +250,19 @@ halves every 30 days, lowest score evicted, `LocalStorage` as one JSON document.
 screen, after the recently used emojis, one tile per remembered search (frequent first, then
 recent, 16 at most): content = its first emoji, title `Search · <query>`; Enter shows that
 search. Actions: **Refresh Suggestions**, **Forget This Search**, **Clear Search Memory**.
-Preference **Search Memory**; when off nothing is stored or shown.
+Preference **Search Memory**; when off nothing is stored or shown. Placeholder and Back to Start
+as described in the README; the "Searches" section id exists for the Raycast title only.
 
 ## Open work
 
-Suggested order: 1 and 2 first (they need no new design), then 3 to 5 (small features), then 6 to
-8 (more work).
+Items 1 and 2 need an API key or Tinycast; the rest of this list is verification and housekeeping.
 
 ### Not yet verified on a real Mac
 
 German name search (needs the system on German or the preference set), skin tone, and the
-launcher argument. Confirm with the next ⌘⇧D report and a short manual check.
+launcher argument. New in 1.3.0: the tone dropdown restoring its stored value on the first commit,
+the ⌥⏎ / ⌘⌫ / ⌘R / ⌃X shortcuts, multi-emoji tile content, and the search tiles (Show Results
+keeping the window open). Confirm with the next ⌘⇧D report and a short manual check.
 
 ### Housekeeping
 
@@ -264,61 +290,3 @@ rename any of them and break the extension without warning.
   switch over without a code change. That would also remove the Keychain prompt and make Apple
   Intelligence, Grok, OpenCode and Cursor usable.
 - Until then, the key list in Copy Diagnostics shows renamed keys early.
-
-### 3. Pick several emojis in one go
-
-An "Add to Selection" action that puts the emoji in a small tray and keeps the grid open, plus
-"Paste Selection" and "Copy Selection" for the whole sequence. A single pick keeps working as it
-does today. The tray needs a visible place; with no section titles, the search bar placeholder
-can show the tray ("Selection: 🎉🥳 — Enter adds, ⌘⏎ pastes").
-
-### 4. Tone switch next to the search field
-
-A search-bar dropdown (`Grid.Dropdown`) with "Any", "Work", "Casual" and "Playful". The choice is
-added to the prompt and to the cache key, and it is remembered between launches.
-
-### 5. Paste in the format the app expects
-
-A choice of what gets inserted: the emoji itself, a Slack or GitHub shortcode (`:tada:`), or a
-gitmoji code for commit messages. Needs the real Slack/GitHub name lists (gemoji), because the
-Unicode-based slugs used by "Copy Shortcode" today don't always match.
-
-### 6. Built-in answers for common searches
-
-A table of a few hundred frequent searches ("happy", "thanks", "birthday", "sorry") with emojis
-prepared in advance. They appear instantly, cost nothing and work with no AI set up; the AI still
-answers everything else. The table is generated once with a model by a script and checked into
-the repo, so it can be regenerated.
-
-### 7. Ready-made combinations
-
-Ask the AI for two or three short sequences as well (for "birthday": 🎉🥳🍾). Tinycast shows no
-section titles, so a combination is a tile whose content is the whole sequence and whose title
-starts with "Combo". The answer format changes from a plain array to an object with `emojis` and
-`combos`; the parser keeps accepting the plain array.
-
-### 8. Search memory: recent and most-asked searches
-
-Today's cache is keyed by model and query and only makes a repeat fast. Add a second, long-lived
-store that learns which searches are asked most, and keeps their answers.
-
-- **Two tiers.** A small _recent_ tier (the last 20 searches) and a _frequent_ tier (up to 200
-  searches, configurable). A search enters the recent tier when it is first answered and is
-  promoted to the frequent tier the second time it is asked. This keeps one-off searches from
-  pushing out established ones.
-- **What an entry holds.** The normalized query, its emojis, the model that answered, a use count,
-  and the time it was last used.
-- **What counts as a use.** Asking the search counts once; picking an emoji from it counts double,
-  because that shows the answer was useful.
-- **Eviction.** When the frequent tier is full, drop the entry with the lowest score. The score is
-  the use count with a time decay (halved every 30 days without use), so old habits fade and the
-  store ends up holding the searches asked most over time.
-- **Where it shows.** Answers from the store appear instantly, for any model, before the AI is
-  asked. The empty screen shows one tile per remembered search: the search's best emoji as the
-  content and the query as the title. Selecting it shows that search's results as the initial
-  query (Tinycast cannot fill the search field), and typing replaces it.
-- **Control.** Actions "Refresh Suggestions" (ask the AI again and replace the stored answer),
-  "Forget This Search" and "Clear Search Memory".
-- **Storage.** `LocalStorage`, one JSON document, because Raycast's `Cache` may evict entries on
-  its own. The store logic is a pure module with unit tests for promotion, scoring, decay and
-  eviction.

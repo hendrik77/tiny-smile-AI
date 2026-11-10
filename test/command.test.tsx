@@ -62,6 +62,7 @@ vi.mock("@raycast/api", async () => {
         Common: {
           Copy: { modifiers: ["cmd", "shift"], key: "c" },
           CopyName: { modifiers: ["cmd", "opt"], key: "c" },
+          Refresh: { modifiers: ["cmd"], key: "r" },
         },
       },
     },
@@ -96,6 +97,7 @@ vi.mock("../src/lib/suggest", async (importActual) => {
 
 import Command from "../src/ai-emoji-search";
 import { findEmoji } from "../src/lib/emoji-data";
+import { lookupBuiltin, BUILTIN_COUNT } from "../src/lib/builtin";
 import { NoRouteError } from "../src/lib/suggest";
 import { MAX_SELECTION_LENGTH } from "../src/emoji-grid";
 
@@ -164,6 +166,9 @@ beforeEach(async () => {
   delete h.prefs.language;
   delete h.prefs.pasteFormat;
   delete h.prefs.combos;
+  // The older tests use queries the built-in table answers; the 1.3.0 describe below turns both back on.
+  h.prefs.builtin = false;
+  h.prefs.searchMemory = false;
 });
 
 async function mount(props: Record<string, unknown> = {}) {
@@ -648,6 +653,9 @@ describe("ai-emoji-search command", () => {
         selection: { status: "used", length: 14 },
         recents: ["🎉", "🥳"],
         usageEntries: 1,
+        answerSource: "ai",
+        searchMemory: "off",
+        builtin: "off",
       });
       expect(JSON.stringify(h.diagnose.mock.calls[0][0])).not.toContain("finally friday");
     });
@@ -1068,3 +1076,387 @@ describe("insert format, tray, tone and combinations", () => {
     expect(h.diagnose.mock.calls[0][0]).toMatchObject({ tone: "any", combos: true, insertFormat: "slack" });
   });
 });
+
+describe("built-in answers and search memory", () => {
+  const Q = "friday night vibes";
+  const items = () => renderer.root.findAllByType("grid-item" as never);
+  const itemFor = (content: string) => items().find((i) => i.props.content === content)!;
+  const actionsOf = (root: ReactTestInstance) =>
+    root.findAll((n) => typeof n.type === "string" && n.type.startsWith("action") && n.props.title !== undefined);
+  const action = (root: ReactTestInstance, title: string) => actionsOf(root).find((a) => a.props.title === title);
+  const press = (a: ReactTestInstance | undefined) => act(async () => void (await a!.props.onAction()));
+  const paste = (content: string) =>
+    act(
+      async () =>
+        void (await renderer.root
+          .findAllByType("action-paste" as never)
+          .find((a) => a.props.content === content)!
+          .props.onPaste()),
+    );
+  const search = async (q: string) => {
+    await type(q);
+    await advance(700);
+    await flush();
+  };
+  const stored = () => JSON.parse(h.store.get("search-memory") ?? '{"recent":[],"frequent":[]}');
+  const entry = (display: string, emojis: string[], over: Record<string, unknown> = {}) => ({
+    query: display.toLowerCase(),
+    display,
+    emojis,
+    combos: [],
+    model: "Claude · test",
+    score: 1,
+    last: Date.now(),
+    asks: 1,
+    ...over,
+  });
+  const preset = (recent: unknown[], frequent: unknown[] = []) =>
+    h.store.set("search-memory", JSON.stringify({ recent, frequent }));
+  const remount = async (props: Record<string, unknown> = {}) => {
+    act(() => renderer.unmount());
+    await mount(props);
+  };
+  const accessory = () =>
+    grid().props.searchBarAccessory as React.ReactElement<Record<string, unknown> & { onChange: (v: string) => void }>;
+
+  beforeEach(() => {
+    delete h.prefs.builtin;
+    delete h.prefs.searchMemory;
+  });
+
+  describe("built-in answers", () => {
+    it("shows the table's emojis at once with no AI call and no loading state", async () => {
+      await mount();
+      await type("thanks");
+      const expected = lookupBuiltin("thanks")!.map((e) => e.emoji);
+      expect(sections()[0].contents).toEqual(expected);
+      expect(items()[0].props.title).toMatch(/^1\. /);
+      expect(grid().props.isLoading).toBe(false);
+      await advance(2000);
+      await flush();
+      expect(h.suggest).not.toHaveBeenCalled();
+      expect(sections()[0].contents).toEqual(expected);
+    });
+
+    it("asks the AI after the debounce when the preference is off", async () => {
+      h.prefs.builtin = false;
+      await mount();
+      await type("thanks");
+      expect(h.suggest).not.toHaveBeenCalled();
+      await advance(450);
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips the table for a tone other than any", async () => {
+      await mount();
+      act(() => accessory().props.onChange("work"));
+      await type("thanks");
+      await advance(450);
+      await flush();
+      expect(h.suggest).toHaveBeenCalledWith("thanks", expect.objectContaining({ tone: "work" }));
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+    });
+
+    it("Refresh Suggestions (⌘R) asks the AI with refresh and replaces the tiles", async () => {
+      await mount();
+      await type("thanks");
+      const refresh = action(items()[0], "Refresh Suggestions");
+      expect(refresh!.props.shortcut).toEqual({ modifiers: ["cmd"], key: "r" });
+      await press(refresh);
+      await flush();
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      expect(h.suggest).toHaveBeenCalledWith("thanks", expect.objectContaining({ refresh: true }));
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+    });
+
+    it("offers Refresh on the empty view of a query, but not without a query", async () => {
+      await mount();
+      expect(action(empty(), "Refresh Suggestions")).toBeUndefined();
+      await type("zzzqq");
+      expect(action(empty(), "Refresh Suggestions")).toBeTruthy();
+    });
+  });
+
+  describe("search memory", () => {
+    it("records an AI answer for a typed query", async () => {
+      await mount();
+      await search(Q);
+      expect(stored().recent).toEqual([entry(Q, ["🎉", "🥳"], { last: expect.any(Number) })]);
+    });
+
+    it("records a launcher argument", async () => {
+      await mount({ arguments: { query: Q } });
+      await flush();
+      expect(stored().recent.map((e: { query: string }) => e.query)).toEqual([Q]);
+    });
+
+    it("does not record a query that came from selected text", async () => {
+      h.selected.mockResolvedValue(Q);
+      await mount();
+      await flush();
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+      expect(h.store.get("search-memory")).toBeUndefined();
+      await press(action(items()[0], "Refresh Suggestions"));
+      await flush();
+      expect(h.store.get("search-memory")).toBeUndefined();
+    });
+
+    it("answers a remembered query at once without the AI, and a stay counts as the second ask", async () => {
+      await mount();
+      await search(Q);
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      expect(stored().frequent).toEqual([]);
+      h.suggest.mockClear();
+      h.suggest.mockResolvedValue({ emojis: [findEmoji("🔥")!], routeLabel: "other" });
+      await remount();
+      await type(Q);
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+      expect(grid().props.isLoading).toBe(false);
+      await advance(700);
+      await flush();
+      expect(h.suggest).not.toHaveBeenCalled();
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+      // The rule: an answer, from the AI or from memory, counts once per visit when the user stays on the query.
+      expect(stored().recent).toEqual([]);
+      expect(stored().frequent.map((e: { query: string; asks: number }) => [e.query, e.asks])).toEqual([[Q, 2]]);
+    });
+
+    it("counts a query only once per visit", async () => {
+      preset([entry(Q, ["🎉"])]);
+      await mount();
+      await search(Q);
+      act(() => accessory().props.onChange("playful"));
+      await advance(700);
+      await flush();
+      expect(stored().frequent[0].asks).toBe(2);
+    });
+
+    it("shows stored combos", async () => {
+      preset([entry(Q, ["🎉", "🥳"], { combos: [["🎉", "🥳", "🍾"]] })]);
+      await mount();
+      await type(Q);
+      expect(sections().map((x) => x.title)).toContain("Combinations");
+      expect(itemFor("🎉🥳🍾")).toBeTruthy();
+    });
+
+    it("stores and shows nothing when the preference is off", async () => {
+      h.prefs.searchMemory = false;
+      preset([entry(Q, ["🔥"])]);
+      await mount();
+      expect(sections()).toEqual([]);
+      await search(Q);
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+      expect(stored().recent.map((e: { query: string }) => e.query)).toEqual([Q]);
+      expect(stored().recent[0].emojis).toEqual(["🔥"]);
+    });
+
+    it("does not create the key when the preference is off", async () => {
+      h.prefs.searchMemory = false;
+      await mount();
+      await search(Q);
+      expect(h.store.has("search-memory")).toBe(false);
+    });
+
+    it("a pick from a remembered search counts double", async () => {
+      preset([], [entry(Q, ["🎉", "🥳"])]);
+      await mount();
+      await search(Q);
+      const before = stored().frequent[0].score;
+      await paste("🥳");
+      expect(stored().frequent[0].score).toBeCloseTo(before + 2, 4);
+    });
+
+    it("a pick from a built-in answer records it as a Built-in search", async () => {
+      await mount();
+      await type("thanks");
+      const first = lookupBuiltin("thanks")![0].emoji;
+      await paste(first);
+      const all = [...stored().recent, ...stored().frequent];
+      expect(all).toHaveLength(1);
+      expect(all[0]).toMatchObject({ query: "thanks", model: "Built-in" });
+      expect(all[0].score).toBeCloseTo(3, 3);
+    });
+
+    it("never records a built-in pick for a selection query", async () => {
+      h.selected.mockResolvedValue("thanks");
+      await mount();
+      await flush();
+      await paste(lookupBuiltin("thanks")![0].emoji);
+      expect(h.store.get("search-memory")).toBeUndefined();
+    });
+
+    it("Refresh replaces the stored answer", async () => {
+      preset([entry(Q, ["🎉", "🥳"])]);
+      await mount();
+      await type(Q);
+      h.suggest.mockResolvedValue({ emojis: [findEmoji("🔥")!, findEmoji("💯")!], routeLabel: "Claude · fresh" });
+      await press(action(items()[0], "Refresh Suggestions"));
+      await flush();
+      expect(h.suggest).toHaveBeenCalledWith(Q, expect.objectContaining({ refresh: true }));
+      expect(sections()[0].contents).toEqual(["🔥", "💯"]);
+      const all = [...stored().recent, ...stored().frequent];
+      expect(all[0]).toMatchObject({ emojis: ["🔥", "💯"], model: "Claude · fresh" });
+    });
+
+    it("a failed Refresh keeps the tiles and toasts the error", async () => {
+      await mount();
+      await search(Q);
+      const before = h.store.get("search-memory");
+      h.suggest.mockRejectedValue(new Error("boom"));
+      await press(action(items()[0], "Refresh Suggestions"));
+      await flush();
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+      expect(h.showToast).toHaveBeenCalledWith(expect.objectContaining({ style: "failure", message: "boom" }));
+      expect(h.store.get("search-memory")).toBe(before);
+      expect(grid().props.isLoading).toBe(false);
+    });
+  });
+
+  describe("empty screen", () => {
+    const two = () => preset([entry("late snack", ["🍕", "🌮"], { last: 1 }), entry(Q, ["🎉", "🥳"], { last: 2 })]);
+    const searchTiles = () => sections().find((x) => x.title === "Searches");
+
+    it("shows one tile per remembered search after the recents", async () => {
+      h.store.set("recent-emojis", JSON.stringify(["🔥"]));
+      two();
+      await mount();
+      expect(sections().map((x) => x.title)).toEqual(["Recently Used", "Searches"]);
+      expect(searchTiles()!.contents).toEqual(["🎉", "🍕"]);
+      expect(items().map((i) => i.props.title as string)).toContain(`Search · ${Q}`);
+      expect(placeholder()).toBe("Recently used and your searches — describe a feeling, situation or thing…");
+    });
+
+    it("says 'Your searches' without recents and uses the skin tone", async () => {
+      h.prefs.skinTone = "dark";
+      preset([entry("thumbs", ["👍"])]);
+      await mount();
+      expect(placeholder()).toBe("Your searches — describe a feeling, situation or thing…");
+      expect(searchTiles()!.contents).toEqual(["👍🏿"]);
+    });
+
+    it("Show Results displays the stored answer without the AI and names it in the placeholder", async () => {
+      two();
+      await mount();
+      const tile = items().find((i) => i.props.title === `Search · ${Q}`)!;
+      expect(firstTitle(tile)).toBe("Show Results");
+      expect(h.pop).not.toHaveBeenCalled();
+      await press(action(tile, "Show Results"));
+      await advance(450);
+      await flush();
+      expect(h.suggest).not.toHaveBeenCalled();
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+      expect(placeholder()).toBe(`Results for “${Q}” — type to search something else`);
+    });
+
+    it("typed text wins over the chosen search and clearing returns to it", async () => {
+      two();
+      await mount();
+      await press(
+        action(
+          items().find((i) => i.props.title === `Search · ${Q}`)!,
+          "Show Results",
+        ),
+      );
+      await type("zzzqq");
+      expect(placeholder()).toBe("Describe a feeling, situation or thing…");
+      await type("");
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+    });
+
+    it("Back to Start returns to the empty screen", async () => {
+      two();
+      await mount();
+      await press(
+        action(
+          items().find((i) => i.props.title === `Search · ${Q}`)!,
+          "Show Results",
+        ),
+      );
+      await press(action(items()[0], "Back to Start"));
+      expect(sections().map((x) => x.title)).toEqual(["Searches"]);
+      expect(action(items()[0], "Back to Start")).toBeUndefined();
+    });
+
+    it("Forget This Search removes the tile and the stored entry", async () => {
+      two();
+      await mount();
+      const tile = items().find((i) => i.props.title === `Search · ${Q}`)!;
+      const forget = action(tile, "Forget This Search");
+      expect(forget!.props.shortcut).toEqual({ modifiers: ["ctrl"], key: "x" });
+      await press(forget);
+      expect(items().map((i) => i.props.title as string)).not.toContain(`Search · ${Q}`);
+      expect(stored().recent.map((e: { query: string }) => e.query)).toEqual(["late snack"]);
+    });
+
+    it("Clear Search Memory empties the store and the screen", async () => {
+      two();
+      await mount();
+      const clear = action(items()[0], "Clear Search Memory");
+      expect(clear!.props.style).toBe("destructive");
+      await press(clear);
+      expect(sections()).toEqual([]);
+      const doc = stored();
+      expect([...doc.recent, ...doc.frequent]).toEqual([]);
+    });
+
+    it("keeps the model and diagnostics actions on a search tile", async () => {
+      two();
+      await mount();
+      expect(action(items()[0], "Choose AI Model…")).toBeTruthy();
+      expect(action(items()[0], "Copy Diagnostics")).toBeTruthy();
+    });
+  });
+
+  describe("diagnostics", () => {
+    const launch = async () => {
+      await press(action(empty() ?? items()[0], "Copy Diagnostics"));
+      return h.diagnose.mock.calls[0][0].launch;
+    };
+
+    it("reports the source, counts and the table size, never the query", async () => {
+      preset([entry(Q, ["🎉"])], [entry("late snack", ["🍕"])]);
+      await mount();
+      await type(Q);
+      const l = await (async () => {
+        await press(action(items()[0], "Copy Diagnostics"));
+        return h.diagnose.mock.calls[0][0].launch;
+      })();
+      expect(l).toMatchObject({
+        answerSource: "memory",
+        searchMemory: { recent: 1, frequent: 1 },
+        builtin: { entries: BUILTIN_COUNT },
+      });
+      expect(JSON.stringify(h.diagnose.mock.calls[0][0])).not.toContain(Q);
+      expect(JSON.stringify(h.diagnose.mock.calls[0][0])).not.toContain("late snack");
+    });
+
+    it("reports built-in, ai and none", async () => {
+      await mount();
+      expect((await launch()).answerSource).toBe("none");
+      h.diagnose.mockClear();
+      await type("thanks");
+      await press(action(items()[0], "Copy Diagnostics"));
+      expect(h.diagnose.mock.calls[0][0].launch.answerSource).toBe("builtin");
+      h.diagnose.mockClear();
+      await search(Q);
+      await press(action(items()[0], "Copy Diagnostics"));
+      // The first ask of Q was just answered by the AI and remembered.
+      expect(["ai", "memory"]).toContain(h.diagnose.mock.calls[0][0].launch.answerSource);
+    });
+
+    it("reports both preferences off", async () => {
+      h.prefs.builtin = false;
+      h.prefs.searchMemory = false;
+      await mount();
+      expect(await launch()).toMatchObject({ searchMemory: "off", builtin: "off" });
+    });
+  });
+});
+
+function firstTitle(root: ReactTestInstance): string {
+  return root.findAll(
+    (n) => ["action", "action-paste", "action-copy", "action-push"].includes(n.type as string) && !!n.props.title,
+  )[0].props.title as string;
+}

@@ -1,6 +1,7 @@
 import { LocalStorage, getSelectedText } from "@raycast/api";
 import React, { useEffect, useRef, useState } from "react";
 import { findEmoji } from "../lib/emoji-data";
+import { clearMemory, emptyMemory, parseMemory, serializeMemory, type SearchMemory } from "../lib/search-memory";
 import { addToTray, clearTray, emptyTray, removeLast, TRAY_MAX, type Tray } from "../lib/tray";
 import { parseUsageStore, recordUse, type UsageStore } from "../lib/usage";
 import type { EmojiEntry, RouteOverride } from "../lib/types";
@@ -9,6 +10,7 @@ export const RECENTS_KEY = "recent-emojis";
 export const MAX_RECENTS = 32;
 export const MODEL_KEY = "model-override";
 export const USAGE_KEY = "emoji-usage";
+export const MEMORY_KEY = "search-memory";
 /** Longer selections are not used, so a passage of a document never goes to the AI provider. */
 export const MAX_SELECTION_LENGTH = 300;
 
@@ -74,6 +76,55 @@ export function useUsage() {
   }
 
   return { usage, record };
+}
+
+/**
+ * Search memory, loaded from LocalStorage and saved on every change. Disabled: never read, never
+ * written, always empty. `update` composes with earlier updates of the same tick and is ignored
+ * until the stored memory is loaded (so a late load can never overwrite a change).
+ */
+export function useSearchMemory(enabled: boolean) {
+  const [state, setState] = useState<{ ready: boolean; memory: SearchMemory }>({
+    ready: !enabled,
+    memory: emptyMemory,
+  });
+  const latest = useRef(state);
+  const commit = (next: { ready: boolean; memory: SearchMemory }) => {
+    latest.current = next;
+    setState(next);
+  };
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    LocalStorage.getItem<string>(MEMORY_KEY)
+      .then((raw) => {
+        if (!cancelled) commit({ ready: true, memory: parseMemory(raw) });
+      })
+      .catch(() => {
+        if (!cancelled) commit({ ready: true, memory: emptyMemory });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+
+  function update(change: (memory: SearchMemory) => SearchMemory) {
+    if (!enabled || !latest.current.ready) return;
+    const memory = change(latest.current.memory);
+    if (memory === latest.current.memory) return;
+    commit({ ready: true, memory });
+    LocalStorage.setItem(MEMORY_KEY, serializeMemory(memory));
+  }
+
+  function clear() {
+    if (!enabled) return;
+    commit({ ready: true, memory: clearMemory() });
+    LocalStorage.removeItem(MEMORY_KEY);
+  }
+
+  /** The latest memory, also inside callbacks that outlive a render. */
+  const current = () => latest.current.memory;
+  return { ready: state.ready, memory: state.memory, current, update, clear };
 }
 
 export function systemLocale(): string | undefined {

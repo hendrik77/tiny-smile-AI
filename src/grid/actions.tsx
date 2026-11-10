@@ -15,6 +15,17 @@ export interface ActionContext {
   onUse: (entries: EmojiEntry[]) => void;
   chooseModel: React.ReactNode;
   onClearRecents?: () => void;
+  /** Asks the AI again for the shown query; set only while there is a query. */
+  refresh?: () => void;
+  /** Leaves a chosen remembered search; set only while one is the initial query. */
+  back?: () => void;
+}
+
+/** Actions on the remembered searches of the empty screen. */
+export interface SearchMemoryActions {
+  show: (display: string) => void;
+  forget: (query: string) => void;
+  clear: () => void;
 }
 
 const noun = (format: InsertFormat) => (format === "emoji" ? "Emoji" : "Shortcode");
@@ -75,12 +86,63 @@ function selectionActions(ctx: ActionContext, extra?: React.ReactNode): React.Re
   );
 }
 
+/** Refresh Suggestions and Back to Start, whichever apply; empty otherwise. */
+function queryActions(ctx: ActionContext): React.ReactNode {
+  if (!ctx.refresh && !ctx.back) return null;
+  return (
+    <ActionPanel.Section key="query">
+      {ctx.refresh ? (
+        <Action
+          title="Refresh Suggestions"
+          icon={Icon.ArrowClockwise}
+          shortcut={Keyboard.Shortcut.Common.Refresh}
+          onAction={ctx.refresh}
+        />
+      ) : null}
+      {ctx.back ? <Action title="Back to Start" icon={Icon.ArrowLeft} onAction={ctx.back} /> : null}
+    </ActionPanel.Section>
+  );
+}
+
+/** The ActionPanel of a remembered-search tile: show it, forget it, clear the memory. */
+export function SearchActions(props: {
+  query: string;
+  display: string;
+  ctx: ActionContext;
+  searches: SearchMemoryActions;
+}) {
+  const { query, display, ctx, searches } = props;
+  return (
+    <ActionPanel title={`Search · ${display}`}>
+      <ActionPanel.Section>
+        <Action title="Show Results" icon={Icon.MagnifyingGlass} onAction={() => searches.show(display)} />
+      </ActionPanel.Section>
+      <ActionPanel.Section>
+        <Action
+          title="Forget This Search"
+          icon={Icon.Trash}
+          shortcut={{ modifiers: ["ctrl"], key: "x" }}
+          onAction={() => searches.forget(query)}
+        />
+        <Action
+          title="Clear Search Memory"
+          icon={Icon.Trash}
+          style={Action.Style.Destructive}
+          onAction={searches.clear}
+        />
+      </ActionPanel.Section>
+      <ActionPanel.Section>{ctx.chooseModel}</ActionPanel.Section>
+    </ActionPanel>
+  );
+}
+
 /** The ActionPanel of the empty view: only the selection (when there is one) and the model actions. */
 export function EmptyActions(props: { ctx: ActionContext }) {
   const { ctx } = props;
   return (
     <ActionPanel>
       {selectionActions(ctx)}
+      {queryActions(ctx)}
       <ActionPanel.Section>{ctx.chooseModel}</ActionPanel.Section>
     </ActionPanel>
   );
@@ -116,6 +178,7 @@ export function EmojiActions(props: { entry: EmojiEntry; ctx: ActionContext; onT
         {pasteCopy(ctx, noun(format), content, [entry])}
         {hasSelection ? null : add}
       </ActionPanel.Section>
+      {queryActions(ctx)}
       <ActionPanel.Section>{ctx.chooseModel}</ActionPanel.Section>
       <ActionPanel.Section>
         <Action.CopyToClipboard title="Copy Name" content={entry.name} shortcut={Keyboard.Shortcut.Common.CopyName} />
@@ -150,6 +213,7 @@ export function ComboActions(props: {
         {pasteCopy(ctx, "Combination", content, combo)}
         {hasSelection ? null : add}
       </ActionPanel.Section>
+      {queryActions(ctx)}
       <ActionPanel.Section>{ctx.chooseModel}</ActionPanel.Section>
     </ActionPanel>
   );

@@ -519,6 +519,32 @@ describe("createSuggester tone and combos", () => {
     expect(r.combos).toEqual([]);
   });
 
+  it("refresh skips the cache read but still writes the new answer", async () => {
+    const { store, cache } = memCache();
+    await createSuggester(deps({ cache }))("party", O);
+    const d2 = deps({ cache, fetch: makeFetch(anthropicAnswer('["🔥","💯"]')) });
+    const s2 = createSuggester(d2);
+    const r = await s2("party", { ...O, refresh: true });
+    expect(calls(d2)).toHaveBeenCalledTimes(1);
+    expect(r.emojis.map((e) => e.emoji)).toEqual(["🔥", "💯"]);
+    // The refreshed answer replaced the cached one, also for a plain ask afterwards.
+    expect([...store.values()].some((v) => v.includes("💯") && !v.includes("🚀"))).toBe(true);
+    const d3 = deps({ cache, fetch: makeFetch("boom", 500) });
+    const again = await createSuggester(d3)("party", O);
+    expect(again.emojis.map((e) => e.emoji)).toEqual(["🔥", "💯"]);
+    expect(calls(d3)).not.toHaveBeenCalled();
+  });
+
+  it("refresh also skips the in-process memory", async () => {
+    const d = deps();
+    const s = createSuggester(d);
+    await s("party", O);
+    await s("party", O);
+    expect(calls(d)).toHaveBeenCalledTimes(1);
+    await s("party", { ...O, refresh: true });
+    expect(calls(d)).toHaveBeenCalledTimes(2);
+  });
+
   it("raycastAsk gets the same prompt options", async () => {
     const raycastAsk = vi.fn(async () => '{"emojis":["🎉"],"combos":[["🎉","🥳"]]}');
     const r = await createSuggester(deps({ raycastAsk }))("party", { ...O, tone: "playful", combos: true });

@@ -1,7 +1,7 @@
 export const DEFAULT_PLACEHOLDER = "Describe a feeling, situation or thing…";
 const MAX_PLACEHOLDER_QUERY = 30;
 
-export type QuerySource = "argument" | "selection";
+export type QuerySource = "argument" | "selection" | "memory";
 
 export function shortenQuery(query: string, max: number): string {
   const flat = query.replace(/\s+/g, " ").trim();
@@ -15,6 +15,8 @@ export interface PlaceholderInput {
   initialQuery: string;
   source: QuerySource | null;
   hasRecents: boolean;
+  /** Remembered searches are shown as tiles on the empty screen. */
+  hasSearches?: boolean;
   /** Emojis (display form) in the multi-pick selection; the placeholder is the only place it is visible. */
   tray?: string[];
 }
@@ -25,11 +27,16 @@ export interface PlaceholderInput {
 export function searchPlaceholder(input: PlaceholderInput): string {
   if (input.tray && input.tray.length > 0) return `Selection: ${input.tray.join("")} — ⌥⏎ adds, ⏎ pastes`;
   if (input.typed) return DEFAULT_PLACEHOLDER;
+  if (input.initialQuery && input.source === "memory") {
+    return `Results for “${shortenQuery(input.initialQuery, MAX_PLACEHOLDER_QUERY)}” — type to search something else`;
+  }
   if (input.initialQuery) {
     const what = input.source === "selection" ? "Emojis for selected text" : "Emojis for";
     return `${what} “${shortenQuery(input.initialQuery, MAX_PLACEHOLDER_QUERY)}” — type to search something else`;
   }
-  if (input.hasRecents)
-    return `Recently used — ${DEFAULT_PLACEHOLDER.charAt(0).toLowerCase()}${DEFAULT_PLACEHOLDER.slice(1)}`;
+  const hint = `${DEFAULT_PLACEHOLDER.charAt(0).toLowerCase()}${DEFAULT_PLACEHOLDER.slice(1)}`;
+  if (input.hasRecents && input.hasSearches) return `Recently used and your searches — ${hint}`;
+  if (input.hasSearches) return `Your searches — ${hint}`;
+  if (input.hasRecents) return `Recently used — ${hint}`;
   return DEFAULT_PLACEHOLDER;
 }

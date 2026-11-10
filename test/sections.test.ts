@@ -56,3 +56,20 @@ describe("buildSections combos", () => {
     expect(buildSections({ query: "", ai: [], local: [], recents: [], combos: [combo] })).toEqual([]);
   });
 });
+
+describe("buildSections searches", () => {
+  const tile = (query: string, emoji: string) => ({ query, display: query, emoji: e(emoji) });
+  it("puts search tiles after the recents on the empty screen", () => {
+    const searches = [tile("party", "🎉"), tile("thanks", "🙏")];
+    const s = buildSections({ query: "", ai: [], local: [], recents: [e("🔥")], searches });
+    expect(s.map((x) => x.id)).toEqual(["recent", "searches"]);
+    expect(s[1]).toEqual({ id: "searches", title: "Searches", emojis: [], searches });
+  });
+  it("shows only the searches without recents", () => {
+    expect(buildSections({ query: "", ai: [], local: [], recents: [], searches: [tile("a b", "🎉")] })).toHaveLength(1);
+  });
+  it("never shows them while there is a query", () => {
+    const s = buildSections({ query: "x", ai: [], local: [], recents: [], searches: [tile("party", "🎉")] });
+    expect(s).toEqual([]);
+  });
+});
