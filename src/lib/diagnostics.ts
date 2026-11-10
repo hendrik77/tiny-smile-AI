@@ -1,6 +1,14 @@
 import { routeLabel } from "./tinycast-settings";
 import type { AIConnection, ModelSelection, RouteOverride, RouteResolution, TinycastAISettings } from "./types";
 
+/** What happened at launch. Never carries the selected text itself. */
+export interface LaunchInfo {
+  querySource: "argument" | "selection" | "none";
+  selection: { status: "off" } | { status: "used"; length: number } | { status: "unused"; reason?: string };
+  recents: string[];
+  usageEntries: number;
+}
+
 export interface DiagnosticsInput {
   extensionVersion: string;
   bundleId: string;
@@ -19,6 +27,7 @@ export interface DiagnosticsInput {
   language?: string;
   systemLocale?: string;
   skinTone?: string;
+  launch?: LaunchInfo;
 }
 
 const MASK = "[redacted]";
@@ -138,6 +147,23 @@ export function formatDiagnostics(input: DiagnosticsInput): string {
   out.push(`Language: ${input.language ?? "en"}`);
   out.push(`System locale: ${input.systemLocale || "unknown"}`);
   out.push(`Skin tone: ${input.skinTone ?? "none"}`);
+
+  if (input.launch) {
+    const { launch } = input;
+    section("Launch");
+    out.push(`Query source: ${launch.querySource === "selection" ? "selected text" : launch.querySource}`);
+    const sel = launch.selection;
+    out.push(
+      sel.status === "off"
+        ? "Selected text: off (preference)"
+        : sel.status === "used"
+          ? `Selected text: used (${sel.length} characters)`
+          : `Selected text: not used: ${redact(sel.reason || "no reason given")}`,
+    );
+    const first = launch.recents.slice(0, 8);
+    out.push(`Recents: ${launch.recents.length}${first.length > 0 ? ` (${first.join(" ")})` : ""}`);
+    out.push(`Usage entries: ${launch.usageEntries}`);
+  }
 
   if (input.lastError) {
     section("Last error");

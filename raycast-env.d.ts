@@ -19,7 +19,9 @@ type ExtensionPreferences = {
   /** Skin Tone - Skin tone applied to emojis that support one. */
   "skinTone": "none" | "light" | "medium-light" | "medium" | "medium-dark" | "dark",
   /** Name Search Language - Extra language for the instant name matches. English is always searched. */
-  "language": "system" | "en" | "de"
+  "language": "system" | "en" | "de",
+  /** Selected Text - The selection of the frontmost app is used as the first search and sent to the AI like typed text. Nothing is read when you give the command an argument. */
+  "useSelection": boolean
 }
 
 /** Preferences accessible in all the extension's commands */
@@ -28,8 +30,6 @@ declare type Preferences = ExtensionPreferences
 declare namespace Preferences {
   /** Preferences accessible in the `ai-emoji-search` command */
   export type AiEmojiSearch = ExtensionPreferences & {}
-  /** Preferences accessible in the `emoji-for-selection` command */
-  export type EmojiForSelection = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
@@ -38,7 +38,5 @@ declare namespace Arguments {
   /** Mood or situation */
   "query": string
 }
-  /** Arguments passed to the `emoji-for-selection` command */
-  export type EmojiForSelection = {}
 }
 

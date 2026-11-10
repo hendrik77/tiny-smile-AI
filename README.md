@@ -10,20 +10,30 @@ mood and slang.
 
 ## What you get
 
-- **AI Suggestions**: every emoji the model picked (24 by default), best fit first. The section
-  title shows which Tinycast model answered.
-- **Matching Names**: classic name and keyword matches, shown right away while the AI is still
-  thinking, and as a fallback when there's no AI.
-- **AI Emoji for Selected Text**: a second command that reads the text selected in the frontmost
-  app and opens the grid already filled with suggestions for it. With nothing selected it says so
-  and opens the normal search.
-- **Search from the launcher**: the AI Emoji Search command takes an optional text argument. Type
-  the command's alias or name, then Tab/space for the argument, as Tinycast shows it (for example
-  `finally friday`), and the results open straight away. The text counts as an initial query shown
-  in the AI section title; typing in the grid replaces it.
+- **One command, "AI Emoji Search".** The grid lists the **AI picks** first, best fit first (24 by
+  default), numbered "1.", "2.", and so on. Below them come the **name matches**: classic name and
+  keyword matches, shown right away while the AI is still thinking, and as a fallback when there is
+  no AI.
+- **Tinycast does not show section titles in grids.** The titles "AI Suggestions · <model>",
+  "Matching Names" and "Recently Used" only appear in Raycast. In Tinycast the numbering marks the
+  AI picks, and the **search bar placeholder** tells you what you are looking at: "Emojis for
+  “…”" for a launcher argument, "Emojis for selected text “…”" for a selection, "Recently used"
+  for the recents. The model in use is visible via **Choose AI Model… (⌘M)** and in **Copy
+  Diagnostics (⌘⇧D)**; the section title with the model name only shows in Raycast.
+- **Selected text**: when the command starts without an argument, the selection of the frontmost
+  app (read through the macOS Accessibility API) becomes the first search, and the AI request
+  starts at once. The grid opens immediately and fills in when the selection has been read. With
+  nothing selected, or without the Accessibility permission, nothing happens and you get the
+  normal search. Typing replaces it; clearing the field brings it back. Turn it off with the
+  **Selected Text** preference.
+- **Search from the launcher**: the command takes an optional text argument. Type the command's
+  alias or name, then Tab/space for the argument, as Tinycast shows it (for example
+  `finally friday`), and the results open straight away. The argument counts as an initial query
+  shown while the field is empty (Tinycast cannot fill the field); typing replaces it. With an
+  argument, the selected text is not read.
 - **Skin tone** and **name search in your language** (German so far) via the settings below, and
   emojis you pick often move up within the name matches.
-- **Recently Used** when the search field is empty.
+- **Recently used** emojis when the search field is empty.
 - **Enter** pastes the emoji into the app you came from. You can also copy the emoji (or set copy
   as the default action), copy its name (⌘⇧.) or its `:shortcode:` (⌘⌥S).
 - **Choose AI Model… (⌘M)** lets emoji search use a different model than your Tinycast chat:
@@ -81,6 +91,7 @@ When the extension runs in Raycast itself, it uses Raycast AI.
 | Primary Action       | Paste    | Whether Enter pastes or copies                                                         |
 | Skin Tone            | Default  | Skin tone applied to emojis that support one (shown, pasted and copied)                |
 | Name Search Language | System   | Extra language for the instant name matches (English is always searched)               |
+| Selected Text        | On       | Use the selection of the frontmost app as the first search when the command starts     |
 
 ### Speed
 
@@ -101,9 +112,11 @@ How long a search takes depends almost entirely on the model:
 
 ## Privacy
 
-What you type and the text you select are sent to the AI provider configured in Tinycast (or run
-through the local Claude Code / Codex tool). Name search, recents and usage ranking stay on your
-Mac.
+What you type is sent to the AI provider configured in Tinycast (or run through the local Claude
+Code / Codex tool). With **Selected Text** on, the selection of the frontmost app is read when the
+command starts and sent the same way, like typed text; turn the preference off to avoid this.
+Nothing is read when you give the command an argument. Name search, recents and usage ranking stay
+on your Mac.
 
 ## Troubleshooting
 

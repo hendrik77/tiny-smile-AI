@@ -9,7 +9,8 @@ A Tinycast extension, **AI Emoji Search**, that works like Raycast's AI emoji pi
 2. After a short typing pause the extension asks **the AI model you already set up in
    Tinycast → Settings → AI** for fitting emojis.
 3. A grid shows **every emoji the AI suggested** (up to the configured count, default 24),
-   best fit first, in an **AI Suggestions** section. Below it, a **Matching Names** section lists
+   best fit first, in an **AI Suggestions** section (numbered; Tinycast does not draw section
+   titles, see 1.2.0). Below it, a **Matching Names** section lists
    emojis whose name or keywords contain the query, so classic search still works and there is
    always something to pick, even before the AI answers or when it fails.
 4. Enter pastes the selected emoji into the frontmost app. Other actions: copy the emoji, copy its
@@ -305,3 +306,22 @@ and typing replaces it.
 ### Done when
 
 `npm run check` is green, CI passes on the pull request, and both commands build.
+
+## 1.2.0: one command, visible state
+
+Verified in Tinycast's source: grids ignore `Grid.Section` titles, `getSelectedText()` reads the
+selection through the Accessibility API (it rejects when nothing is selected or the permission is
+missing, which is the normal case), and the search field cannot be filled. So:
+
+- The `emoji-for-selection` command is removed. `ai-emoji-search` reads the selection itself when
+  the new **Selected Text** preference (default on) is set and no argument was given. The read
+  runs in the background; the grid renders at once. A non-blank result is used as the initial
+  query only if the user has not typed yet, and the AI request starts without debounce. A
+  rejection or blank text does nothing and shows no toast.
+- The state moves into the search bar placeholder (`src/lib/placeholder.ts`): the initial query
+  (argument or selected text) or "Recently used". AI tiles stay numbered, section titles stay for
+  Raycast.
+- Copy Diagnostics gets a Launch section (source, selection used or why not, recents, usage
+  entries) and never contains the selected text.
+- README corrected: the model name is not visible in Tinycast's grid, only in Raycast's section
+  title, via ⌘M and in the diagnostics.

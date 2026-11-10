@@ -226,3 +226,53 @@ describe("name search section", () => {
     expect(out).toContain("Skin tone: none");
   });
 });
+
+describe("launch section", () => {
+  const launch = (over: Partial<NonNullable<DiagnosticsInput["launch"]>> = {}) => ({
+    querySource: "none" as const,
+    selection: { status: "off" as const },
+    recents: [] as string[],
+    usageEntries: 0,
+    ...over,
+  });
+
+  it("is omitted without launch info", () => {
+    expect(formatDiagnostics(input())).not.toContain("## Launch");
+  });
+  it("reports argument source, preference off, recents and usage", () => {
+    const out = formatDiagnostics(
+      input({
+        launch: launch({
+          querySource: "argument",
+          recents: ["🎉", "🥳", "🔥", "😀", "😂", "🙏", "👍", "❤️", "🐱", "🐶"],
+          usageEntries: 12,
+        }),
+      }),
+    );
+    expect(out).toContain("## Launch");
+    expect(out).toContain("Query source: argument");
+    expect(out).toContain("Selected text: off (preference)");
+    expect(out).toContain("Recents: 10 (🎉 🥳 🔥 😀 😂 🙏 👍 ❤️)");
+    expect(out).not.toContain("🐱");
+    expect(out).toContain("Usage entries: 12");
+  });
+  it("reports a used selection by length only", () => {
+    const out = formatDiagnostics(
+      input({ launch: launch({ querySource: "selection", selection: { status: "used", length: 42 } }) }),
+    );
+    expect(out).toContain("Query source: selected text");
+    expect(out).toContain("Selected text: used (42 characters)");
+    expect(out).toContain("Recents: 0");
+  });
+  it("reports why a selection was not used, redacted", () => {
+    const out = formatDiagnostics(
+      input({
+        launch: launch({
+          selection: { status: "unused", reason: "No selection sk-abcdefghijklmnop1234" },
+        }),
+      }),
+    );
+    expect(out).toContain("Query source: none");
+    expect(out).toContain("Selected text: not used: No selection [redacted]");
+  });
+});

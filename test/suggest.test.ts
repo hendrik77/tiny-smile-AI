@@ -331,6 +331,20 @@ describe("diagnose", () => {
 
   const base = { bundleId: "com.tinycast.app", count: 24, extensionVersion: "1.0.0" };
 
+  it("passes launch info into the report", async () => {
+    const report = await createSuggester(deps({ raycastAsk: async () => "" })).diagnose({
+      ...base,
+      launch: {
+        querySource: "selection",
+        selection: { status: "used", length: 7 },
+        recents: ["🎉"],
+        usageEntries: 3,
+      },
+    });
+    expect(report).toContain("Selected text: used (7 characters)");
+    expect(report).toContain("Usage entries: 3");
+  });
+
   it("reports an API route without leaking the key", async () => {
     const d = deps();
     const report = await createSuggester(d).diagnose(base);
