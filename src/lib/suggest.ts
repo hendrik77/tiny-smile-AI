@@ -1,6 +1,6 @@
 import { readApiKey, readRequestHeaders } from "./keychain";
-import { parseSuggestions } from "./parse-suggestions";
-import { buildEmojiPrompt } from "./prompt";
+import { parseAnswer } from "./parse-suggestions";
+import { buildEmojiPrompt, parseTone, type Tone } from "./prompt";
 import { formatDiagnostics, type DiagnosticsInput, type LaunchInfo } from "./diagnostics";
 import { callApi, callCli, fastestEffort, findExecutable } from "./providers";
 import { listRouteChoices, readTinycastAISettingsDetailed, resolveRoute, routeLabel } from "./tinycast-settings";
@@ -40,6 +40,10 @@ export interface SuggestOptions {
   override?: RouteOverride | null;
   /** Ask thinking models to think as little as possible (default true). */
   minimizeThinking?: boolean;
+  /** Tone of the suggestions (default "any"). */
+  tone?: Tone;
+  /** Also ask for combinations of 2 to 4 emojis (default false). */
+  combos?: boolean;
 }
 
 export interface DiagnoseOptions {
@@ -52,11 +56,14 @@ export interface DiagnoseOptions {
   language?: string;
   systemLocale?: string;
   skinTone?: string;
+  tone?: Tone;
+  combos?: boolean;
   launch?: LaunchInfo;
 }
 
 export interface SuggestResult {
   emojis: EmojiEntry[];
+  combos: EmojiEntry[][];
   routeLabel: string;
 }
 
@@ -68,7 +75,7 @@ interface PreparedRoute {
   ask: (prompt: EmojiPrompt, minimizeThinking: boolean) => Promise<string>;
 }
 
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 
 /**
  * Returns a function that asks the AI for emojis. Tinycast's settings and the Keychain are read
@@ -164,21 +171,32 @@ export function createSuggester(deps: SuggesterDeps) {
     return pending;
   }
 
-  function readCache(key: string): EmojiEntry[] | undefined {
+  function readCache(key: string): { emojis: EmojiEntry[]; combos: EmojiEntry[][] } | undefined {
     const raw = memory.get(key) ?? deps.cache?.get(key);
     if (!raw) return undefined;
+    const resolve = (list: unknown): EmojiEntry[] =>
+      Array.isArray(list)
+        ? list.map((e) => (typeof e === "string" ? findEmoji(e) : undefined)).filter((e): e is EmojiEntry => !!e)
+        : [];
     try {
-      const list = JSON.parse(raw);
-      if (!Array.isArray(list)) return undefined;
-      const entries = list.map((e) => (typeof e === "string" ? findEmoji(e) : undefined));
-      return entries.filter((e): e is EmojiEntry => e !== undefined);
+      const value = JSON.parse(raw);
+      // Old format: a plain array of emoji strings.
+      if (Array.isArray(value)) return { emojis: resolve(value), combos: [] };
+      if (!value || typeof value !== "object") return undefined;
+      const combos = Array.isArray(value.combos)
+        ? value.combos.map(resolve).filter((c: EmojiEntry[]) => c.length >= 2)
+        : [];
+      return { emojis: resolve(value.emojis), combos };
     } catch {
       return undefined;
     }
   }
 
-  function writeCache(key: string, emojis: EmojiEntry[]) {
-    const raw = JSON.stringify(emojis.map((e) => e.emoji));
+  function writeCache(key: string, emojis: EmojiEntry[], combos: EmojiEntry[][]) {
+    const raw = JSON.stringify({
+      emojis: emojis.map((e) => e.emoji),
+      combos: combos.map((c) => c.map((e) => e.emoji)),
+    });
     memory.set(key, raw);
     deps.cache?.set(key, raw);
   }
@@ -190,18 +208,21 @@ export function createSuggester(deps: SuggesterDeps) {
 
     const route = await preparedRoute(options.bundleId, options.override ?? null);
     const minimize = options.minimizeThinking ?? true;
-    const cacheKey = `${CACHE_VERSION}|${route.key}|${minimize ? "min" : "full"}|${count}|${normalized}`;
+    const tone = parseTone(options.tone);
+    const combos = options.combos === true;
+    const cacheKey = `${CACHE_VERSION}|${route.key}|${minimize ? "min" : "full"}|${count}|${tone}|${combos ? "combos" : "plain"}|${normalized}`;
     const cached = readCache(cacheKey);
-    if (cached && cached.length > 0) return { emojis: cached, routeLabel: route.label };
+    if (cached && cached.emojis.length > 0) return { ...cached, routeLabel: route.label };
 
     const running = inFlight.get(cacheKey);
     if (running) return running;
     const request = (async () => {
-      const answer = await route.ask(buildEmojiPrompt(query.trim(), count), minimize);
-      const emojis = parseSuggestions(answer, count);
-      if (emojis.length === 0) throw new Error("The AI didn't suggest any emoji for this search.");
-      writeCache(cacheKey, emojis);
-      return { emojis, routeLabel: route.label };
+      const answer = await route.ask(buildEmojiPrompt(query.trim(), count, { tone, combos }), minimize);
+      const parsed = parseAnswer(answer, count);
+      if (parsed.emojis.length === 0) throw new Error("The AI didn't suggest any emoji for this search.");
+      const kept = combos ? parsed.combos : [];
+      writeCache(cacheKey, parsed.emojis, kept);
+      return { emojis: parsed.emojis, combos: kept, routeLabel: route.label };
     })();
     inFlight.set(cacheKey, request);
     const forget = () => inFlight.delete(cacheKey);
@@ -230,6 +251,8 @@ export function createSuggester(deps: SuggesterDeps) {
       language: options.language,
       systemLocale: options.systemLocale,
       skinTone: options.skinTone,
+      tone: options.tone,
+      combos: options.combos,
       launch: options.launch,
     };
     try {

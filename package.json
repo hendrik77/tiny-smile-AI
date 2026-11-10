@@ -239,7 +239,7 @@
     "build": "ray build -e dist -o dist",
     "dev": "ray develop",
     "test": "vitest run",
-    "build:data": "node scripts/build-emoji-data.mjs && node scripts/build-keywords.mjs",
+    "build:data": "node scripts/build-emoji-data.mjs && node scripts/build-keywords.mjs && node scripts/build-shortcodes.mjs",
     "typecheck": "tsc --noEmit && tsc -p eval/tsconfig.json",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",

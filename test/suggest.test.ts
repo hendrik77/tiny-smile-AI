@@ -432,3 +432,111 @@ describe("diagnose", () => {
     expect(exec.calls).toHaveLength(0);
   });
 });
+
+describe("createSuggester tone and combos", () => {
+  const O = { bundleId: "com.tinycast.app", count: 24 };
+  const sentPrompt = (d: SuggesterDeps, n = 0) => {
+    const body = JSON.parse((d.fetch as unknown as { mock: ReturnType<typeof vi.fn> }).mock.mock.calls[n][1].body);
+    return `${body.system}\n${body.messages[0].content}` as string;
+  };
+  const calls = (d: SuggesterDeps) => (d.fetch as unknown as { mock: ReturnType<typeof vi.fn> }).mock;
+  const objAnswer = anthropicAnswer('{"emojis":["🎉","🥳"],"combos":[["🎉","🥳","🍾"],["🎂","🎁"],["x"]]}');
+  const memCache = () => {
+    const store = new Map<string, string>();
+    return { store, cache: { get: (k: string) => store.get(k), set: (k: string, v: string) => void store.set(k, v) } };
+  };
+  const names = (combos: { emoji: string }[][]) => combos.map((c) => c.map((e) => e.emoji));
+
+  it("tone and combos reach the prompt", async () => {
+    const d = deps({ fetch: makeFetch(objAnswer) });
+    const r = await createSuggester(d)("party", { ...O, tone: "work", combos: true });
+    const body = sentPrompt(d);
+    expect(body).toMatch(/professional chat/);
+    expect(body).toMatch(/JSON object/);
+    expect(r.emojis.map((e) => e.emoji)).toEqual(["🎉", "🥳"]);
+    expect(names(r.combos)).toEqual([
+      ["🎉", "🥳", "🍾"],
+      ["🎂", "🎁"],
+    ]);
+  });
+
+  it("defaults give no combos and the unchanged prompt", async () => {
+    const d = deps();
+    const r = await createSuggester(d)("party", O);
+    expect(r.combos).toEqual([]);
+    expect(sentPrompt(d)).toMatch(/ONLY a JSON array/);
+    expect(sentPrompt(d)).not.toMatch(/professional chat|relaxed everyday|funny and exaggerated/);
+  });
+
+  it("plain array answer with combos on still works", async () => {
+    const r = await createSuggester(deps())("party", { ...O, combos: true });
+    expect(r.emojis).toHaveLength(3);
+    expect(r.combos).toEqual([]);
+  });
+
+  it("cache separates tones and the combos flag", async () => {
+    const d = deps();
+    const suggest = createSuggester(d);
+    await suggest("party", O);
+    await suggest("party", { ...O, tone: "any" });
+    expect(calls(d)).toHaveBeenCalledTimes(1);
+    await suggest("party", { ...O, tone: "playful" });
+    expect(calls(d)).toHaveBeenCalledTimes(2);
+    await suggest("party", { ...O, combos: true });
+    expect(calls(d)).toHaveBeenCalledTimes(3);
+    await suggest("party", { ...O, tone: "playful" });
+    expect(calls(d)).toHaveBeenCalledTimes(3);
+  });
+
+  it("in-flight requests distinguish tone and combos", async () => {
+    const d = deps();
+    const suggest = createSuggester(d);
+    await Promise.all([
+      suggest("party", O),
+      suggest("party", { ...O, tone: "casual" }),
+      suggest("party", { ...O, combos: true }),
+    ]);
+    expect(calls(d)).toHaveBeenCalledTimes(3);
+  });
+
+  it("combos are cached with the answer", async () => {
+    const { cache } = memCache();
+    await createSuggester(deps({ cache, fetch: makeFetch(objAnswer) }))("party", { ...O, combos: true });
+    const d2 = deps({ cache, fetch: makeFetch("boom", 500) });
+    const r = await createSuggester(d2)("party", { ...O, combos: true });
+    expect(names(r.combos)).toEqual([
+      ["🎉", "🥳", "🍾"],
+      ["🎂", "🎁"],
+    ]);
+  });
+
+  it("reads old-format cache entries (plain array) as emojis without combos", async () => {
+    const { store, cache } = memCache();
+    await createSuggester(deps({ cache }))("party", O);
+    for (const k of [...store.keys()]) store.set(k, JSON.stringify(["🔥", "💯"]));
+    const r = await createSuggester(deps({ cache, fetch: makeFetch("boom", 500) }))("party", O);
+    expect(r.emojis.map((e) => e.emoji)).toEqual(["🔥", "💯"]);
+    expect(r.combos).toEqual([]);
+  });
+
+  it("raycastAsk gets the same prompt options", async () => {
+    const raycastAsk = vi.fn(async () => '{"emojis":["🎉"],"combos":[["🎉","🥳"]]}');
+    const r = await createSuggester(deps({ raycastAsk }))("party", { ...O, tone: "playful", combos: true });
+    const prompt = (raycastAsk.mock.calls[0] as unknown as [string])[0];
+    expect(prompt).toMatch(/funny and exaggerated/);
+    expect(prompt).toMatch(/JSON object/);
+    expect(r.combos).toHaveLength(1);
+  });
+
+  it("diagnose reports tone and combinations", async () => {
+    const text = await createSuggester(deps()).diagnose({
+      bundleId: "com.tinycast.app",
+      count: 24,
+      extensionVersion: "1",
+      tone: "casual",
+      combos: true,
+    });
+    expect(text).toContain("Tone: casual");
+    expect(text).toContain("Combinations: on");
+  });
+});

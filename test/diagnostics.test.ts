@@ -276,3 +276,18 @@ describe("launch section", () => {
     expect(out).toContain("Selected text: not used: No selection [redacted]");
   });
 });
+
+describe("tone and combinations lines", () => {
+  it("prints them next to the speed settings", () => {
+    const text = formatDiagnostics(input({ tone: "work", combos: true }));
+    expect(text).toContain("Tone: work");
+    expect(text).toContain("Combinations: on");
+    expect(text.indexOf("Tone: work")).toBeGreaterThan(text.indexOf("## Speed"));
+    expect(text.indexOf("Tone: work")).toBeLessThan(text.indexOf("## Name search"));
+  });
+  it("defaults to any and off", () => {
+    const text = formatDiagnostics(input());
+    expect(text).toContain("Tone: any");
+    expect(text).toContain("Combinations: off");
+  });
+});

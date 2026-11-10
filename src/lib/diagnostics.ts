@@ -27,6 +27,8 @@ export interface DiagnosticsInput {
   language?: string;
   systemLocale?: string;
   skinTone?: string;
+  tone?: string;
+  combos?: boolean;
   launch?: LaunchInfo;
 }
 
@@ -142,6 +144,8 @@ export function formatDiagnostics(input: DiagnosticsInput): string {
     out.push(`Effort sent: ${input.effort ?? "none"}`);
   }
   out.push(`Suggestions: ${input.resultCount}`);
+  out.push(`Tone: ${input.tone ?? "any"}`);
+  out.push(`Combinations: ${input.combos ? "on" : "off"}`);
 
   section("Name search");
   out.push(`Language: ${input.language ?? "en"}`);
