@@ -14,6 +14,15 @@ mood and slang.
   title shows which Tinycast model answered.
 - **Matching Names**: classic name and keyword matches, shown right away while the AI is still
   thinking, and as a fallback when there's no AI.
+- **AI Emoji for Selected Text**: a second command that reads the text selected in the frontmost
+  app and opens the grid already filled with suggestions for it. With nothing selected it says so
+  and opens the normal search.
+- **Search from the launcher**: the AI Emoji Search command takes an optional text argument. Type
+  the command's alias or name, then Tab/space for the argument, as Tinycast shows it (for example
+  `finally friday`), and the results open straight away. The text counts as an initial query shown
+  in the AI section title; typing in the grid replaces it.
+- **Skin tone** and **name search in your language** (German so far) via the settings below, and
+  emojis you pick often move up within the name matches.
 - **Recently Used** when the search field is empty.
 - **Enter** pastes the emoji into the app you came from. You can also copy the emoji (or set copy
   as the default action), copy its name (⌘⇧.) or its `:shortcode:` (⌘⌥S).
@@ -64,12 +73,14 @@ When the extension runs in Raycast itself, it uses Raycast AI.
 
 ### Settings
 
-| Preference       | Default  | What it does                                                                           |
-| ---------------- | -------- | -------------------------------------------------------------------------------------- |
-| Tinycast Channel | Tinycast | Read settings from Tinycast, Tinycast Beta or Tinycast Dev                             |
-| AI Suggestions   | 24       | How many emojis to ask for (12–48). Fewer means a shorter answer, so it arrives sooner |
-| Speed            | On       | Ask thinking models to think as little as possible (see below)                         |
-| Primary Action   | Paste    | Whether Enter pastes or copies                                                         |
+| Preference           | Default  | What it does                                                                           |
+| -------------------- | -------- | -------------------------------------------------------------------------------------- |
+| Tinycast Channel     | Tinycast | Read settings from Tinycast, Tinycast Beta or Tinycast Dev                             |
+| AI Suggestions       | 24       | How many emojis to ask for (12–48). Fewer means a shorter answer, so it arrives sooner |
+| Speed                | On       | Ask thinking models to think as little as possible (see below)                         |
+| Primary Action       | Paste    | Whether Enter pastes or copies                                                         |
+| Skin Tone            | Default  | Skin tone applied to emojis that support one (shown, pasted and copied)                |
+| Name Search Language | System   | Extra language for the instant name matches (English is always searched)               |
 
 ### Speed
 
@@ -82,8 +93,17 @@ How long a search takes depends almost entirely on the model:
   "minimal" or "low"), using the same request fields Tinycast uses. If a provider rejects that
   field, the request is retried once without it.
 - **Fewer suggestions.** 12 instead of 24 halves what the model has to write.
+- **Longer queries wait a little longer.** The search starts after a short pause in typing: 0.45 s
+  for short queries, more for longer ones. A search that takes too long is stopped after 20 s
+  (Claude Code and Codex tools) or 30 s (API connections).
 - **API connections are faster than installed tools.** `claude` and `codex` start a whole program
   for every search, which adds a few seconds.
+
+## Privacy
+
+What you type and the text you select are sent to the AI provider configured in Tinycast (or run
+through the local Claude Code / Codex tool). Name search, recents and usage ranking stay on your
+Mac.
 
 ## Troubleshooting
 
@@ -131,6 +151,8 @@ npm run check
 The code is split into small, dependency-injected modules under `src/lib/` (dataset, local search,
 prompt, response parsing, plist reader, Tinycast settings, Keychain, providers, orchestrator), each
 with vitest tests in `test/`. See [PLAN.md](PLAN.md) for the design.
+
+The suggestion evaluation script and its samples are described in [eval/README.md](eval/README.md).
 
 Emoji data comes from [unicode-emoji-json](https://github.com/muan/unicode-emoji-json) and
 [emojilib](https://github.com/muan/emojilib).

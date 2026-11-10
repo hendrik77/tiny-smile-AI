@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   suggest: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
   prefs: { channel: "com.tinycast.app", resultCount: "24", primaryAction: "paste" } as Record<string, string>,
+  selected: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
   store: new Map<string, string>(),
   showToast: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
   pop: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
@@ -19,6 +20,7 @@ vi.mock("@raycast/api", async () => {
   h.showToast = vi.fn();
   h.pop = vi.fn();
   h.copy = vi.fn();
+  h.selected = vi.fn();
   const host = (tag: string) => (props: Record<string, unknown>) =>
     React.createElement(tag, props, props.children as React.ReactNode, props.actions as React.ReactNode);
   const Grid = Object.assign(host("grid"), {
@@ -66,6 +68,7 @@ vi.mock("@raycast/api", async () => {
     Toast: { Style: { Success: "success", Failure: "failure", Animated: "animated" } },
     showToast: h.showToast,
     Clipboard: { copy: h.copy },
+    getSelectedText: h.selected,
     getPreferenceValues: () => h.prefs,
     environment: { canAccess: () => false },
     AI: { ask: vi.fn() },
@@ -151,11 +154,13 @@ beforeEach(async () => {
   h.copy.mockReset();
   h.copy.mockResolvedValue(undefined);
   delete h.prefs.minimizeThinking;
+  delete h.prefs.skinTone;
+  delete h.prefs.language;
 });
 
-async function mount() {
+async function mount(props: Record<string, unknown> = {}) {
   await act(async () => {
-    renderer = TestRenderer.create(<Command />);
+    renderer = TestRenderer.create(<Command {...(props as React.ComponentProps<typeof Command>)} />);
   });
   await flush();
 }
@@ -404,5 +409,163 @@ describe("ai-emoji-search command", () => {
     await act(async () => void defaultItem.findAllByType("action" as never)[0].props.onAction());
     expect(h.store.has("model-override")).toBe(false);
     act(() => picker.unmount());
+  });
+
+  describe("launcher argument", () => {
+    const withQuery = (query: string) => ({ arguments: { query } });
+
+    it("asks at once with the argument and names it in the AI section title", async () => {
+      await mount(withQuery("finally friday"));
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      expect(h.suggest.mock.calls[0][0]).toBe("finally friday");
+      await flush();
+      expect(sections()[0].title).toBe("AI Suggestions for “finally friday” · Claude · test");
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+    });
+
+    it("uses the argument for name matches and passes no searchText to the grid", async () => {
+      h.suggest.mockReturnValue(new Promise(() => {}));
+      await mount(withQuery("party"));
+      expect(sections().map((s) => s.title)).toEqual(["Matching Names"]);
+      expect(sections()[0].contents).toContain("🎉");
+      expect(grid().props.searchText).toBeUndefined();
+    });
+
+    it("typing replaces the argument and the title loses the 'for' part", async () => {
+      await mount(withQuery("finally friday"));
+      await flush();
+      await type("party");
+      await advance(450);
+      await flush();
+      expect(h.suggest).toHaveBeenLastCalledWith("party", expect.anything());
+      expect(sections()[0].title).toBe("AI Suggestions · Claude · test");
+    });
+
+    it("clearing the typed text goes back to the argument", async () => {
+      await mount(withQuery("finally friday"));
+      await flush();
+      await type("party");
+      await advance(450);
+      await flush();
+      await type("");
+      await flush();
+      expect(sections()[0].title).toBe("AI Suggestions for “finally friday” · Claude · test");
+    });
+
+    it("shortens a long argument in the title but sends up to 500 characters", async () => {
+      const long = "x".repeat(600);
+      await mount(withQuery(`  ${long}  `));
+      expect(h.suggest.mock.calls[0][0]).toBe("x".repeat(500));
+      await flush();
+      const title = sections()[0].title;
+      expect(title).toContain("…");
+      expect(title).not.toContain("x".repeat(41));
+    });
+
+    it("tolerates missing props, arguments and a blank query", async () => {
+      for (const props of [{}, { arguments: undefined }, { arguments: { query: "   " } }]) {
+        await mount(props);
+        act(() => renderer.unmount());
+      }
+      await mount();
+      await advance(1000);
+      expect(h.suggest).not.toHaveBeenCalled();
+      expect(empty().props.title).toBe("Describe what you want to express");
+    });
+  });
+
+  describe("debounce", () => {
+    it("fires a 20-character query only after 650 ms", async () => {
+      await mount();
+      await type("a".repeat(20));
+      await advance(450);
+      expect(h.suggest).not.toHaveBeenCalled();
+      await advance(200);
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("skin tone", () => {
+    it("shows and pastes the toned emoji but remembers the base emoji", async () => {
+      h.prefs.skinTone = "medium";
+      await mount();
+      await type("thumbs up");
+      const item = renderer.root.findAllByType("grid-item" as never).find((i) => i.props.content === "👍🏽")!;
+      expect(item).toBeTruthy();
+      const paste = item.findAllByType("action-paste" as never)[0];
+      expect(paste.props.content).toBe("👍🏽");
+      expect(item.findAllByType("action-copy" as never)[0].props.content).toBe("👍🏽");
+      await act(async () => paste.props.onPaste());
+      await flush();
+      expect(JSON.parse(h.store.get("recent-emojis")!)).toEqual(["👍"]);
+      expect(Object.keys(JSON.parse(h.store.get("emoji-usage")!))).toEqual(["👍"]);
+    });
+
+    it("leaves unsupported emojis unchanged", async () => {
+      h.prefs.skinTone = "medium";
+      await mount();
+      await type("party popper");
+      const contents = renderer.root.findAllByType("grid-item" as never).map((i) => i.props.content);
+      expect(contents).toContain("🎉");
+    });
+  });
+
+  describe("usage ranking", () => {
+    it("ranks a used name match first on a fresh mount, leaving AI order alone", async () => {
+      await mount();
+      await type("party");
+      await advance(450);
+      await flush();
+      const names = sections().find((s) => s.title === "Matching Names")!.contents;
+      const picked = names[names.length - 1];
+      expect(names.indexOf(picked)).toBeGreaterThan(0);
+      const paste = renderer.root.findAllByType("action-paste" as never).find((a) => a.props.content === picked)!;
+      await act(async () => paste.props.onPaste());
+      await flush();
+      act(() => renderer.unmount());
+
+      await mount();
+      await type("party");
+      await advance(450);
+      await flush();
+      const again = sections();
+      expect(again[0].contents).toEqual(["🎉", "🥳"]);
+      expect(again.find((s) => s.title === "Matching Names")!.contents[0]).toBe(picked);
+    });
+  });
+
+  describe("language", () => {
+    it("finds German names before any AI answer when the language is de", async () => {
+      h.prefs.language = "de";
+      await mount();
+      await type("feuer");
+      expect(sections().find((s) => s.title === "Matching Names")?.contents).toContain("🔥");
+      expect(h.suggest).not.toHaveBeenCalled();
+    });
+
+    it("does not with English only", async () => {
+      h.prefs.language = "en";
+      await mount();
+      await type("feuer");
+      expect(sections().flatMap((s) => s.contents)).not.toContain("🔥");
+    });
+  });
+
+  it("passes language, system locale and skin tone to the diagnostics", async () => {
+    h.prefs.language = "de";
+    h.prefs.skinTone = "medium";
+    await mount();
+    await act(
+      async () =>
+        void (await empty()
+          .findAllByType("action" as never)
+          .find((a) => a.props.title === "Copy Diagnostics")!
+          .props.onAction()),
+    );
+    expect(h.diagnose.mock.calls[0][0]).toMatchObject({
+      language: "de",
+      systemLocale: Intl.DateTimeFormat().resolvedOptions().locale,
+      skinTone: "medium",
+    });
   });
 });

@@ -49,6 +49,9 @@ export interface DiagnoseOptions {
   count: number;
   extensionVersion: string;
   lastError?: string;
+  language?: string;
+  systemLocale?: string;
+  skinTone?: string;
 }
 
 export interface SuggestResult {
@@ -223,6 +226,9 @@ export function createSuggester(deps: SuggesterDeps) {
       resultCount: options.count,
       lastError: options.lastError,
       raycastAI: Boolean(deps.raycastAsk),
+      language: options.language,
+      systemLocale: options.systemLocale,
+      skinTone: options.skinTone,
     };
     try {
       if (deps.raycastAsk) return formatDiagnostics(base);

@@ -317,6 +317,18 @@ describe("routeLabel for CLI default models", () => {
 });
 
 describe("diagnose", () => {
+  it("passes language, locale and skin tone into the report", async () => {
+    const report = await createSuggester(deps({ raycastAsk: async () => "" })).diagnose({
+      ...base,
+      language: "de",
+      systemLocale: "de-DE",
+      skinTone: "dark",
+    });
+    expect(report).toContain("Language: de");
+    expect(report).toContain("System locale: de-DE");
+    expect(report).toContain("Skin tone: dark");
+  });
+
   const base = { bundleId: "com.tinycast.app", count: 24, extensionVersion: "1.0.0" };
 
   it("reports an API route without leaking the key", async () => {
