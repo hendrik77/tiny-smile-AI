@@ -238,3 +238,70 @@ store that learns which searches are asked most, and keeps their answers.
 - **Storage.** `LocalStorage`, one JSON document, because Raycast's `Cache` may evict entries on
   its own. The store logic is a pure module with unit tests for promotion, scoring, decay and
   eviction.
+
+## 1.1.0 implementation plan
+
+Covers five "Future versions" entries: fewer AI calls, suggestion quality, selected text,
+launcher argument, name search in the user's language. Built test-first by sub-agents in two
+waves. Wave 1 is four library modules with no shared files; wave 2 wires them into the UI.
+
+Constraint found in Tinycast's source: it does not read a grid's `searchText` property, so an
+extension cannot fill the search field. A launcher argument or selected text is therefore an
+_initial query_: its results show while the field is empty, with the query in the section title,
+and typing replaces it.
+
+### Wave 1: library (parallel)
+
+**A. Request control** (`src/lib/request-policy.ts`, `suggest.ts`, `providers.ts`, `exec.ts`)
+
+- `debounceDelay(query)`: 450 ms up to 12 characters, 650 ms up to 30, 850 ms beyond.
+- In-flight reuse: two `suggest` calls for the same route, count, speed setting and normalized
+  query share one request.
+- Tool timeout: 20 s for `claude`/`codex` instead of 90 s. A timeout reports "The Claude Code
+  tool took longer than 20 seconds. Pick a faster model with ⌘M or add an API connection."
+- API requests get a 30 s limit with a matching message.
+
+**B. Skin tone and usage ranking** (`src/lib/skin-tone.ts`, `src/lib/usage.ts`, `emoji-data.ts`,
+`types.ts`)
+
+- `EmojiEntry.skinTone: boolean` from the dataset's `skin_tone_support`.
+- `applySkinTone(emoji, tone)`: inserts the modifier after the first code point and drops a
+  following U+FE0F; unchanged for unsupported emojis and for tone "none".
+- Usage store (pure): `recordUse(store, emoji, now)`, `usageScore(entry, now)` with a 30-day
+  half-life, capped at 300 entries; `rankByUsage(entries, store, now)` is a stable sort that only
+  moves used emojis up within the name-match section. AI order is never reordered: the model's
+  ranking is the product.
+
+**C. Name search in the user's language** (`src/lib/locale-keywords.ts`, `local-search.ts`,
+`scripts/build-keywords.mjs`, `src/data/keywords-de.json`)
+
+- A script turns `emojibase-data/de/compact.json` into a compact file: emoji → label and tags,
+  only for emojis in our dataset.
+- `resolveLanguage(preference, systemLocale)`: "system" maps `de-*` to German, anything else to
+  English only.
+- `searchLocal(query, limit, language)`: English as before, plus the language's label and tags
+  with the same ranking tiers. German matching folds case and umlauts ("ß" as "ss").
+
+**D. Suggestion evaluation** (`src/lib/eval-score.ts`, `eval/samples.json`,
+`scripts/eval-suggestions.mjs`)
+
+- 30 samples: a query, emojis that should appear, emojis that must not.
+- Pure scoring: hit rate in the top 8 and top 24, forbidden hits, per-sample report.
+- A script runs the real prompt against an API (key from the environment, never stored) and
+  prints the table. It cannot run in CI, and tuning the prompt waits for a real run.
+
+### Wave 2: UI (one agent, after wave 1)
+
+- Extract the grid into `src/emoji-grid.tsx` with an `initialQuery` property; both commands use it.
+- `ai-emoji-search`: optional `query` argument becomes the initial query.
+- `emoji-for-selection`: reads `getSelectedText()`, trims and caps it at 500 characters, and uses
+  it as the initial query. With no selection it shows a toast and opens the normal search.
+- Wire in: `debounceDelay`, skin tone on display and on paste/copy, usage recording on pick and
+  ranking of name matches, language preference for name search.
+- README: new command, argument, preferences, and a privacy note that typed and selected text is
+  sent to the configured AI provider.
+- CHANGELOG: 1.1.0.
+
+### Done when
+
+`npm run check` is green, CI passes on the pull request, and both commands build.

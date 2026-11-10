@@ -15,7 +15,11 @@ type ExtensionPreferences = {
   /** Speed - Ask thinking models to reason as little as possible, using the lowest level declared for the model in Tinycast. */
   "minimizeThinking": boolean,
   /** Primary Action - What Enter does with the selected emoji. */
-  "primaryAction": "paste" | "copy"
+  "primaryAction": "paste" | "copy",
+  /** Skin Tone - Skin tone applied to emojis that support one. */
+  "skinTone": "none" | "light" | "medium-light" | "medium" | "medium-dark" | "dark",
+  /** Name Search Language - Extra language for the instant name matches. English is always searched. */
+  "language": "system" | "en" | "de"
 }
 
 /** Preferences accessible in all the extension's commands */
@@ -24,10 +28,17 @@ declare type Preferences = ExtensionPreferences
 declare namespace Preferences {
   /** Preferences accessible in the `ai-emoji-search` command */
   export type AiEmojiSearch = ExtensionPreferences & {}
+  /** Preferences accessible in the `emoji-for-selection` command */
+  export type EmojiForSelection = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
   /** Arguments passed to the `ai-emoji-search` command */
-  export type AiEmojiSearch = {}
+  export type AiEmojiSearch = {
+  /** Mood or situation */
+  "query": string
+}
+  /** Arguments passed to the `emoji-for-selection` command */
+  export type EmojiForSelection = {}
 }
 
