@@ -177,6 +177,57 @@ tested without macOS, Tinycast or network.
 - **Docs corrected:** the model name is not visible in Tinycast's grid, only in Raycast, via ⌘M
   and in the diagnostics.
 
+## 1.3.0 implementation concepts
+
+Covers open items 3 to 8. Items 1 (needs an API key) and 2 (needs Tinycast) stay open. Built
+test-first by sub-agents: pure library modules in parallel, then the UI in two steps.
+
+Shared rules, all following from the Tinycast constraints above:
+
+- No section titles: every new kind of tile is recognizable by its **title** ("Combo · …",
+  "Search · …"), and the search bar placeholder names the current state.
+- The search field cannot be filled: a remembered search that is selected becomes the _initial
+  query_, exactly like a launcher argument.
+- An answer has one source, tried in this order: **search memory → built-in table → cache → AI**.
+  Memory and built-in answers do not call the AI. **Refresh Suggestions (⌘R)** asks the AI for the
+  current query and replaces what is shown and stored.
+
+**Multi-pick (item 3)** — `src/lib/tray.ts`, pure: `add`, `removeLast`, `clear`, `sequence`, max
+12 entries, duplicates allowed. **Add to Selection** is ⌥⏎ and keeps the grid open. While the
+tray is not empty, the first action is **Paste Selection** (pastes the tray, in the chosen insert
+format), then **Copy Selection**, **Remove Last from Selection**, **Clear Selection**; the
+placeholder shows `Selection: 🎉🥳 — ⌥⏎ adds, ⏎ pastes`. Each emoji counts as used.
+
+**Tone (item 4)** — `Tone = "any" | "work" | "casual" | "playful"`. `buildEmojiPrompt` takes the
+tone and adds one line to the system prompt; "any" leaves the prompt unchanged. The tone is part
+of the cache key. UI: a `Grid.Dropdown` in the search bar with `storeValue`.
+
+**Insert format (item 5)** — `scripts/build-shortcodes.mjs` generates `src/data/shortcodes.json`
+from emojibase-data (`github.json`, and `iamcal.json` for Slack): emoji → `[github, slack]`.
+`src/lib/insert-format.ts`: `formatEmoji(entry, format, skinTone)` returns the emoji (with skin
+tone) or `:code:`; an emoji without a code in the chosen set falls back to the emoji itself.
+Preference **Insert As**. "Copy Shortcode" uses the GitHub code instead of the Unicode slug.
+
+**Built-in answers (item 6)** — `src/data/builtin.json`: about 250 common searches, English and
+German, each with 12 emojis, best first. `src/lib/builtin.ts`: `lookupBuiltin(query)` on the
+normalized query (case, whitespace, punctuation, umlaut folding), exact match plus a small alias
+list per entry. Tests check every emoji exists and no entry has duplicates.
+
+**Combinations (item 7)** — the prompt asks for `{"emojis": [...], "combos": [[...], ...]}` with
+up to 3 combos of 2 to 4 emojis when the preference is on; with it off the prompt and the answer
+stay a plain array. `parseSuggestions` keeps accepting a plain array; a new `parseAnswer` returns
+`{ emojis, combos }`, with every combo emoji validated against the dataset. Combos are cached
+with the answer. UI: one tile per combo after the AI tiles, content = the sequence, title
+`Combo · <names>`; Enter pastes the sequence.
+
+**Search memory (item 8)** — `src/lib/search-memory.ts`, pure, as specified under open work:
+recent tier (20), frequent tier (200), promotion on the second ask, a pick counts double, score
+halves every 30 days, lowest score evicted, `LocalStorage` as one JSON document. UI: on the empty
+screen, after the recently used emojis, one tile per remembered search (frequent first, then
+recent, 16 at most): content = its first emoji, title `Search · <query>`; Enter shows that
+search. Actions: **Refresh Suggestions**, **Forget This Search**, **Clear Search Memory**.
+Preference **Search Memory**; when off nothing is stored or shown.
+
 ## Open work
 
 Suggested order: 1 and 2 first (they need no new design), then 3 to 5 (small features), then 6 to

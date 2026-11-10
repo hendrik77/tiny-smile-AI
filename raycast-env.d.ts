@@ -21,7 +21,15 @@ type ExtensionPreferences = {
   /** Name Search Language - Extra language for the instant name matches. English is always searched. */
   "language": "system" | "en" | "de",
   /** Selected Text - The selection of the frontmost app is used as the first search and sent to the AI like typed text. Nothing is read when you give the command an argument. */
-  "useSelection": boolean
+  "useSelection": boolean,
+  /** Insert As - What Paste and Copy insert: the emoji itself or a shortcode for apps that expect one. */
+  "pasteFormat": "emoji" | "github" | "slack",
+  /** Combinations - Ask the AI for a few short emoji sequences in addition to single emojis. */
+  "combos": boolean,
+  /** Built-in Answers - Use prepared emojis for frequent searches such as thanks or birthday. The AI can still be asked with Refresh Suggestions. */
+  "builtin": boolean,
+  /** Search Memory - Keep your searches and their answers on this Mac, show them on the empty screen and answer them instantly. */
+  "searchMemory": boolean
 }
 
 /** Preferences accessible in all the extension's commands */
