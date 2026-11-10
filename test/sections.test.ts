@@ -41,3 +41,18 @@ describe("buildSections", () => {
     expect(s[0].emojis).toHaveLength(2);
   });
 });
+
+describe("buildSections combos", () => {
+  const combo = [e("🎉"), e("🥳")];
+  it("puts combos right after the AI tiles", () => {
+    const s = buildSections({ query: "party", ai: [e("🔥")], local: [e("🚒")], recents: [], combos: [combo] });
+    expect(s.map((x) => x.id)).toEqual(["ai", "combos", "local"]);
+    expect(s[1]).toEqual({ id: "combos", title: "Combinations", emojis: [], combos: [combo] });
+  });
+  it("shows combos without AI tiles, never for an empty query", () => {
+    expect(buildSections({ query: "party", ai: [], local: [], recents: [], combos: [combo] }).map((x) => x.id)).toEqual(
+      ["combos"],
+    );
+    expect(buildSections({ query: "", ai: [], local: [], recents: [], combos: [combo] })).toEqual([]);
+  });
+});

@@ -1,51 +1,57 @@
 import {
   AI,
   Action,
-  ActionPanel,
   Cache,
   Clipboard,
   Grid,
   Icon,
-  Keyboard,
-  LocalStorage,
   Toast,
   environment,
   getPreferenceValues,
-  getSelectedText,
   showToast,
 } from "@raycast/api";
 import { existsSync } from "fs";
 import { homedir } from "os";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { findEmoji } from "./lib/emoji-data";
+import { ComboActions, EmojiActions, EmptyActions, type ActionContext } from "./grid/actions";
+import {
+  MAX_SELECTION_LENGTH,
+  systemLocale,
+  useDebounced,
+  useLaunchSelection,
+  useModelOverride,
+  useRecents,
+  useTray,
+  useUsage,
+} from "./grid/hooks";
 import { execFileAsync } from "./lib/exec";
+import { parseInsertFormat } from "./lib/insert-format";
 import { resolveLanguage } from "./lib/locale-keywords";
 import { searchLocal } from "./lib/local-search";
+import { parseTone, type Tone } from "./lib/prompt";
 import { debounceDelay } from "./lib/request-policy";
 import { applySkinTone, parseSkinTone } from "./lib/skin-tone";
-import { parseUsageStore, rankByUsage, recordUse, type UsageStore } from "./lib/usage";
+import { rankByUsage } from "./lib/usage";
 import { searchPlaceholder, shortenQuery } from "./lib/placeholder";
 import type { LaunchInfo } from "./lib/diagnostics";
 import { buildSections } from "./lib/sections";
 import { NoRouteError, createSuggester, type SuggesterDeps } from "./lib/suggest";
-import type { EmojiEntry, FetchFn, RouteChoice, RouteOverride } from "./lib/types";
+import type { EmojiEntry, FetchFn, RouteChoice } from "./lib/types";
 import { version as extensionVersion } from "./lib/version";
 import { ModelPicker } from "./model-picker";
 
+export { MAX_SELECTION_LENGTH };
+
 const MIN_QUERY_LENGTH = 2;
-const RECENTS_KEY = "recent-emojis";
-const MAX_RECENTS = 32;
-const MODEL_KEY = "model-override";
-const USAGE_KEY = "emoji-usage";
 const MAX_INITIAL_QUERY = 500;
-/** Longer selections are not used, so a passage of a document never goes to the AI provider. */
-export const MAX_SELECTION_LENGTH = 300;
 const MAX_TITLE_QUERY = 40;
 
 interface AIState {
   query: string;
   modelKey?: string;
+  tone?: Tone;
   emojis: EmojiEntry[];
+  combos: EmojiEntry[][];
   label?: string;
   error?: string;
 }
@@ -69,155 +75,10 @@ function makeDeps(): SuggesterDeps {
   };
 }
 
-/** Debounces typed text; an emptied field resets at once, so a retype never revives the old value. */
-function useDebounced(value: string, delay: number): string {
-  const [debounced, setDebounced] = useState(value);
-  if (value === "" && debounced !== "") setDebounced("");
-  useEffect(() => {
-    if (value === "") return;
-    const timer = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-  return value === "" ? "" : debounced;
-}
-
-function useRecents() {
-  const [recents, setRecents] = useState<EmojiEntry[]>([]);
-  useEffect(() => {
-    LocalStorage.getItem<string>(RECENTS_KEY).then((raw) => {
-      try {
-        const list: unknown = raw ? JSON.parse(raw) : [];
-        if (Array.isArray(list)) {
-          setRecents(
-            list.map((e) => (typeof e === "string" ? findEmoji(e) : undefined)).filter(Boolean) as EmojiEntry[],
-          );
-        }
-      } catch {
-        // A garbled list is simply forgotten.
-      }
-    });
-  }, []);
-
-  function remember(entry: EmojiEntry) {
-    setRecents((current) => {
-      const next = [entry, ...current.filter((e) => e.emoji !== entry.emoji)].slice(0, MAX_RECENTS);
-      LocalStorage.setItem(RECENTS_KEY, JSON.stringify(next.map((e) => e.emoji)));
-      return next;
-    });
-  }
-
-  function clear() {
-    setRecents([]);
-    LocalStorage.removeItem(RECENTS_KEY);
-  }
-
-  return { recents, remember, clear };
-}
-
-function useUsage() {
-  const [usage, setUsage] = useState<UsageStore>({});
-  useEffect(() => {
-    LocalStorage.getItem<string>(USAGE_KEY)
-      .then((raw) => setUsage((current) => ({ ...parseUsageStore(raw), ...current })))
-      .catch(() => {});
-  }, []);
-
-  function record(emoji: string) {
-    setUsage((current) => {
-      const next = recordUse(current, emoji, Date.now());
-      LocalStorage.setItem(USAGE_KEY, JSON.stringify(next));
-      return next;
-    });
-  }
-
-  return { usage, record };
-}
-
-function systemLocale(): string | undefined {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().locale || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 const shorten = (query: string) => shortenQuery(query, MAX_TITLE_QUERY);
 
 function cleanQuery(text: string | undefined): string {
   return (text ?? "").trim().slice(0, MAX_INITIAL_QUERY).trim();
-}
-
-type SelectionState = { status: "pending" } | { status: "used"; text: string } | { status: "unused"; reason: string };
-
-/** Reads the selection of the frontmost app in the background, once; never toasts. */
-function useLaunchSelection(enabled: boolean, hasTyped: React.RefObject<boolean>): SelectionState {
-  const [state, setState] = useState<SelectionState>({ status: "pending" });
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    getSelectedText()
-      .then((raw) => {
-        if (cancelled) return;
-        const text = (raw ?? "").trim();
-        if (hasTyped.current) setState({ status: "unused", reason: "typed before the selection was read" });
-        else if (!text) setState({ status: "unused", reason: "selection is blank" });
-        else if (text.length > MAX_SELECTION_LENGTH)
-          setState({ status: "unused", reason: `selection is longer than ${MAX_SELECTION_LENGTH} characters` });
-        else setState({ status: "used", text });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setState({ status: "unused", reason: error instanceof Error ? error.message : String(error) });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, hasTyped]);
-  return state;
-}
-
-function parseOverride(raw: string | undefined): RouteOverride | null {
-  if (!raw) return null;
-  try {
-    const value = JSON.parse(raw);
-    if (value?.kind === "api" && typeof value.connection === "string" && typeof value.model === "string") {
-      return { kind: "api", connection: value.connection, model: value.model };
-    }
-    if (
-      value?.kind === "cli" &&
-      (value.tool === "claude" || value.tool === "codex") &&
-      typeof value.model === "string"
-    ) {
-      return { kind: "cli", tool: value.tool, model: value.model };
-    }
-  } catch {
-    // A garbled choice falls back to Tinycast's default.
-  }
-  return null;
-}
-
-/** The model picked for emoji search; `null` follows Tinycast's default. `ready` is false until loaded. */
-function useModelOverride() {
-  const [state, setState] = useState<{
-    ready: boolean;
-    override: RouteOverride | null;
-  }>({
-    ready: false,
-    override: null,
-  });
-  useEffect(() => {
-    LocalStorage.getItem<string>(MODEL_KEY)
-      .then((raw) => setState({ ready: true, override: parseOverride(raw) }))
-      .catch(() => setState({ ready: true, override: null }));
-  }, []);
-
-  function choose(override: RouteOverride | null) {
-    setState({ ready: true, override });
-    if (override) LocalStorage.setItem(MODEL_KEY, JSON.stringify(override));
-    else LocalStorage.removeItem(MODEL_KEY);
-  }
-
-  return { ...state, choose };
 }
 
 export function EmojiGrid(props: { argumentQuery?: string }) {
@@ -228,6 +89,8 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
   const pasteFirst = preferences.primaryAction !== "copy";
   const minimizeThinking = preferences.minimizeThinking !== false;
   const skinTone = parseSkinTone(preferences.skinTone);
+  const format = parseInsertFormat(preferences.pasteFormat);
+  const wantCombos = preferences.combos !== false;
   const locale = useMemo(systemLocale, []);
   const language = resolveLanguage(preferences.language, locale);
 
@@ -251,10 +114,13 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
   const requestQuery = typed ? debouncedTyped : initialQuery;
   const query = typed || initialQuery;
   const fromInitial = !typed && initialQuery !== "";
-  const [ai, setAI] = useState<AIState>({ query: "", emojis: [] });
+  const [ai, setAI] = useState<AIState>({ query: "", emojis: [], combos: [] });
   const [loading, setLoading] = useState(false);
   const { recents, remember, clear } = useRecents();
   const { usage, record } = useUsage();
+  const tray = useTray();
+  // Tinycast owns the dropdown and reports the stored choice through onChange on the first commit.
+  const [tone, setTone] = useState<Tone>("any");
   const model = useModelOverride();
   const modelKey = JSON.stringify(model.override);
 
@@ -272,6 +138,9 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
       language,
       systemLocale: locale,
       skinTone,
+      tone,
+      combos: wantCombos,
+      insertFormat: format,
       launch: {
         querySource,
         selection: !useSelection
@@ -312,7 +181,7 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
   useEffect(() => {
     if (!model.ready) return;
     if (requestQuery.length < MIN_QUERY_LENGTH) {
-      setAI({ query: requestQuery, emojis: [] });
+      setAI({ query: requestQuery, emojis: [], combos: [] });
       setLoading(false);
       return;
     }
@@ -323,6 +192,8 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
       count,
       override: model.override,
       minimizeThinking,
+      tone,
+      combos: wantCombos,
     })
       .then((result) => {
         if (cancelled) return;
@@ -330,7 +201,9 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
         setAI({
           query: requestQuery,
           modelKey,
+          tone,
           emojis: result.emojis,
+          combos: result.combos ?? [],
           label: result.routeLabel,
         });
       })
@@ -338,7 +211,7 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : String(error);
         lastError.current = message;
-        setAI({ query: requestQuery, modelKey, emojis: [], error: message });
+        setAI({ query: requestQuery, modelKey, tone, emojis: [], combos: [], error: message });
         showToast({
           style: Toast.Style.Failure,
           title: error instanceof NoRouteError ? "No AI model available" : "AI emoji search failed",
@@ -351,23 +224,41 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
     return () => {
       cancelled = true;
     };
-  }, [requestQuery, bundleId, count, modelKey, model.ready, minimizeThinking]);
+  }, [requestQuery, bundleId, count, modelKey, model.ready, minimizeThinking, tone, wantCombos]);
 
   const local = useMemo(
     () => rankByUsage(searchLocal(query, 60, language), usage, Date.now()),
     [query, language, usage],
   );
   // Only show AI picks that belong to what is typed now, never a previous query's answer.
-  const aiIsCurrent = ai.query === query && ai.modelKey === modelKey;
+  const aiIsCurrent = ai.query === query && ai.modelKey === modelKey && ai.tone === tone;
   const aiForQuery = aiIsCurrent ? ai.emojis : [];
+  const combosForQuery = aiIsCurrent && wantCombos ? ai.combos : [];
   const sections = buildSections({
     query,
     ai: aiForQuery,
     local,
     recents,
+    combos: combosForQuery,
     aiTitle: ["AI Suggestions" + (fromInitial ? ` for “${shorten(query)}”` : ""), ai.label].filter(Boolean).join(" · "),
   });
   const waitingForAI = query.length >= MIN_QUERY_LENGTH && (loading || !aiIsCurrent);
+
+  const ctx: ActionContext = {
+    format,
+    skinTone,
+    pasteFirst,
+    tray,
+    onUse: (entries) => {
+      entries.forEach((entry) => {
+        remember(entry);
+        record(entry.emoji);
+      });
+    },
+    chooseModel,
+    onClearRecents: recents.length > 0 ? clear : undefined,
+  };
+  const trayFull = () => void showToast({ style: Toast.Style.Failure, title: "Selection is full" });
 
   return (
     <Grid
@@ -380,7 +271,16 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
         initialQuery,
         source: querySource === "none" ? null : querySource,
         hasRecents: recents.length > 0,
+        tray: tray.entries.map((e) => applySkinTone(e, skinTone)),
       })}
+      searchBarAccessory={
+        <Grid.Dropdown tooltip="Tone" storeValue onChange={(value) => setTone(parseTone(value))}>
+          <Grid.Dropdown.Item title="Any Tone" value="any" />
+          <Grid.Dropdown.Item title="Work" value="work" />
+          <Grid.Dropdown.Item title="Casual" value="casual" />
+          <Grid.Dropdown.Item title="Playful" value="playful" />
+        </Grid.Dropdown>
+      }
       onSearchTextChange={(text) => {
         if (text.trim()) hasTyped.current = true;
         setSearchText(text);
@@ -389,7 +289,7 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
       {sections.length === 0 ? (
         <Grid.EmptyView
           icon="🔎"
-          actions={<ActionPanel>{chooseModel}</ActionPanel>}
+          actions={<EmptyActions ctx={ctx} />}
           title={
             !query
               ? "Describe what you want to express"
@@ -408,65 +308,31 @@ export function EmojiGrid(props: { argumentQuery?: string }) {
       ) : (
         sections.map((section) => (
           <Grid.Section key={section.id} title={section.title}>
-            {section.emojis.map((entry, index) => (
-              <Grid.Item
-                key={`${section.id}-${entry.emoji}`}
-                content={applySkinTone(entry, skinTone)}
-                title={section.id === "ai" ? `${index + 1}. ${entry.name}` : entry.name}
-                keywords={entry.keywords}
-                actions={
-                  <EmojiActions
-                    entry={entry}
-                    emoji={applySkinTone(entry, skinTone)}
-                    pasteFirst={pasteFirst}
-                    onUse={() => {
-                      remember(entry);
-                      record(entry.emoji);
-                    }}
-                    onClearRecents={recents.length > 0 ? clear : undefined}
-                    chooseModel={chooseModel}
+            {section.id === "combos"
+              ? (section.combos ?? []).map((combo, index) => {
+                  const title = `Combo · ${combo.map((e) => e.name).join(" + ")}`;
+                  return (
+                    <Grid.Item
+                      key={`combos-${index}-${combo.map((e) => e.emoji).join("")}`}
+                      content={combo.map((e) => applySkinTone(e, skinTone)).join("")}
+                      title={title}
+                      keywords={combo.map((e) => e.name)}
+                      actions={<ComboActions combo={combo} title={title} ctx={ctx} onTrayFull={trayFull} />}
+                    />
+                  );
+                })
+              : section.emojis.map((entry, index) => (
+                  <Grid.Item
+                    key={`${section.id}-${entry.emoji}`}
+                    content={applySkinTone(entry, skinTone)}
+                    title={section.id === "ai" ? `${index + 1}. ${entry.name}` : entry.name}
+                    keywords={entry.keywords}
+                    actions={<EmojiActions entry={entry} ctx={ctx} onTrayFull={trayFull} />}
                   />
-                }
-              />
-            ))}
+                ))}
           </Grid.Section>
         ))
       )}
     </Grid>
-  );
-}
-
-function EmojiActions(props: {
-  entry: EmojiEntry;
-  emoji: string;
-  pasteFirst: boolean;
-  onUse: () => void;
-  onClearRecents?: () => void;
-  chooseModel: React.ReactNode;
-}) {
-  const { entry, emoji, pasteFirst, onUse, onClearRecents, chooseModel } = props;
-  const paste = <Action.Paste key="paste" title="Paste Emoji" content={emoji} onPaste={onUse} />;
-  const copy = <Action.CopyToClipboard key="copy" title="Copy Emoji" content={emoji} onCopy={onUse} />;
-  return (
-    <ActionPanel title={entry.name}>
-      <ActionPanel.Section>{pasteFirst ? [paste, copy] : [copy, paste]}</ActionPanel.Section>
-      <ActionPanel.Section>{chooseModel}</ActionPanel.Section>
-      <ActionPanel.Section>
-        <Action.CopyToClipboard title="Copy Name" content={entry.name} shortcut={Keyboard.Shortcut.Common.CopyName} />
-        <Action.CopyToClipboard
-          title="Copy Shortcode"
-          content={`:${entry.slug}:`}
-          shortcut={{ modifiers: ["cmd", "opt"], key: "s" }}
-        />
-        {onClearRecents ? (
-          <Action
-            title="Clear Recently Used"
-            icon={Icon.Trash}
-            style={Action.Style.Destructive}
-            onAction={onClearRecents}
-          />
-        ) : null}
-      </ActionPanel.Section>
-    </ActionPanel>
   );
 }

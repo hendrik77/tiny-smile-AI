@@ -29,6 +29,7 @@ export interface DiagnosticsInput {
   skinTone?: string;
   tone?: string;
   combos?: boolean;
+  insertFormat?: string;
   launch?: LaunchInfo;
 }
 
@@ -146,6 +147,7 @@ export function formatDiagnostics(input: DiagnosticsInput): string {
   out.push(`Suggestions: ${input.resultCount}`);
   out.push(`Tone: ${input.tone ?? "any"}`);
   out.push(`Combinations: ${input.combos ? "on" : "off"}`);
+  out.push(`Insert as: ${input.insertFormat ?? "emoji"}`);
 
   section("Name search");
   out.push(`Language: ${input.language ?? "en"}`);

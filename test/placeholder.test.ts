@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PLACEHOLDER, searchPlaceholder, shortenQuery } from "../src/lib/placeholder";
 
-const base = { typed: "", initialQuery: "", source: null, hasRecents: false } as const;
+const base = { typed: "", initialQuery: "", source: null, hasRecents: false, tray: [] as string[] } as const;
 
 describe("shortenQuery", () => {
   it("collapses whitespace and cuts at the limit with an ellipsis", () => {
@@ -45,5 +45,14 @@ describe("searchPlaceholder", () => {
     expect(searchPlaceholder({ ...base, initialQuery: "hi", source: "argument", hasRecents: true })).toContain(
       "Emojis for “hi”",
     );
+  });
+});
+
+describe("searchPlaceholder with a selection tray", () => {
+  it("shows the tray before everything else, also while typing", () => {
+    const expected = "Selection: 🎉🥳 — ⌥⏎ adds, ⏎ pastes";
+    expect(searchPlaceholder({ ...base, tray: ["🎉", "🥳"] })).toBe(expected);
+    expect(searchPlaceholder({ ...base, typed: "party", hasRecents: true, tray: ["🎉", "🥳"] })).toBe(expected);
+    expect(searchPlaceholder({ ...base, initialQuery: "x", source: "argument", tray: ["🎉", "🥳"] })).toBe(expected);
   });
 });

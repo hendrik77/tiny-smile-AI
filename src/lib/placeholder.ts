@@ -15,12 +15,15 @@ export interface PlaceholderInput {
   initialQuery: string;
   source: QuerySource | null;
   hasRecents: boolean;
+  /** Emojis (display form) in the multi-pick selection; the placeholder is the only place it is visible. */
+  tray?: string[];
 }
 
 /**
  * Tinycast does not draw grid section titles, so the search bar says what the tiles are.
  */
 export function searchPlaceholder(input: PlaceholderInput): string {
+  if (input.tray && input.tray.length > 0) return `Selection: ${input.tray.join("")} — ⌥⏎ adds, ⏎ pastes`;
   if (input.typed) return DEFAULT_PLACEHOLDER;
   if (input.initialQuery) {
     const what = input.source === "selection" ? "Emojis for selected text" : "Emojis for";

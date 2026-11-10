@@ -58,6 +58,7 @@ export interface DiagnoseOptions {
   skinTone?: string;
   tone?: Tone;
   combos?: boolean;
+  insertFormat?: string;
   launch?: LaunchInfo;
 }
 
@@ -253,6 +254,7 @@ export function createSuggester(deps: SuggesterDeps) {
       skinTone: options.skinTone,
       tone: options.tone,
       combos: options.combos,
+      insertFormat: options.insertFormat,
       launch: options.launch,
     };
     try {

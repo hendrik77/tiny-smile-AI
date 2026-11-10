@@ -227,6 +227,13 @@ describe("name search section", () => {
   });
 });
 
+describe("insert format", () => {
+  it("reports the format, defaulting to emoji", () => {
+    expect(formatDiagnostics(input({ insertFormat: "github" }))).toContain("Insert as: github");
+    expect(formatDiagnostics(input())).toContain("Insert as: emoji");
+  });
+});
+
 describe("launch section", () => {
   const launch = (over: Partial<NonNullable<DiagnosticsInput["launch"]>> = {}) => ({
     querySource: "none" as const,

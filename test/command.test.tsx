@@ -27,6 +27,7 @@ vi.mock("@raycast/api", async () => {
     Section: host("grid-section"),
     Item: host("grid-item"),
     EmptyView: host("grid-empty"),
+    Dropdown: Object.assign(host("grid-dropdown"), { Item: host("grid-dropdown-item") }),
     Inset: { Small: "small", Medium: "medium", Large: "large" },
   });
   const ActionPanel = Object.assign(host("action-panel"), { Section: host("action-section") });
@@ -161,6 +162,8 @@ beforeEach(async () => {
   delete h.prefs.minimizeThinking;
   delete h.prefs.skinTone;
   delete h.prefs.language;
+  delete h.prefs.pasteFormat;
+  delete h.prefs.combos;
 });
 
 async function mount(props: Record<string, unknown> = {}) {
@@ -200,6 +203,8 @@ describe("ai-emoji-search command", () => {
       count: 24,
       override: null,
       minimizeThinking: true,
+      tone: "any",
+      combos: true,
     });
 
     await flush();
@@ -305,6 +310,8 @@ describe("ai-emoji-search command", () => {
       count: 24,
       override: haiku,
       minimizeThinking: false,
+      tone: "any",
+      combos: true,
     });
   });
 
@@ -774,5 +781,290 @@ describe("ai-emoji-search command", () => {
       systemLocale: Intl.DateTimeFormat().resolvedOptions().locale,
       skinTone: "medium",
     });
+  });
+});
+
+describe("insert format, tray, tone and combinations", () => {
+  const items = () => renderer.root.findAllByType("grid-item" as never);
+  const itemFor = (content: string) => items().find((i) => i.props.content === content)!;
+  const actionsOf = (root: ReactTestInstance) =>
+    root.findAll((n) => typeof n.type === "string" && n.type.startsWith("action") && n.props.title !== undefined);
+  const action = (root: ReactTestInstance, title: string) => actionsOf(root).find((a) => a.props.title === title);
+  const firstAction = (root: ReactTestInstance) =>
+    root.findAll(
+      (n) => ["action", "action-paste", "action-copy", "action-push"].includes(n.type as string) && !!n.props.title,
+    )[0];
+  const press = (a: ReactTestInstance | undefined) => act(async () => void (await a!.props.onAction()));
+  const used = (a: ReactTestInstance | undefined) => act(async () => void (await a!.props.onPaste?.()));
+  const search = async (q = "party") => {
+    await mount();
+    await type(q);
+    await advance(450);
+    await flush();
+  };
+  const accessory = () =>
+    grid().props.searchBarAccessory as React.ReactElement<Record<string, unknown> & { onChange: (v: string) => void }>;
+  const add = async (content: string) => press(action(itemFor(content), "Add to Selection"));
+  const recents = () => JSON.parse(h.store.get("recent-emojis") ?? "[]") as string[];
+
+  describe("insert format", () => {
+    it("pastes a GitHub shortcode while the tile still shows the emoji", async () => {
+      h.prefs.pasteFormat = "github";
+      await search();
+      const item = itemFor("🎉");
+      const paste = action(item, "Paste Shortcode")!;
+      expect(paste.type).toBe("action-paste");
+      expect(paste.props.content).toBe(":tada:");
+      expect(action(item, "Copy Shortcode")!.props.content).toBe(":tada:");
+      expect(action(item, "Paste Emoji")).toBeUndefined();
+      // the secondary action now copies the emoji itself
+      const second = actionsOf(item).filter((a) => a.props.title === "Copy Emoji");
+      expect(second.map((a) => a.props.content)).toEqual(["🎉"]);
+      expect(second[0].props.shortcut).toEqual({ modifiers: ["cmd", "opt"], key: "s" });
+    });
+
+    it("uses Slack codes and falls back to the emoji without a code in the set", async () => {
+      h.prefs.pasteFormat = "slack";
+      h.suggest.mockResolvedValue({ emojis: [findEmoji("🫩")!, findEmoji("🎉")!], combos: [], routeLabel: "x" });
+      await search();
+      expect(action(itemFor("🎉"), "Paste Shortcode")!.props.content).toBe(":tada:");
+      expect(action(itemFor("🫩"), "Paste Shortcode")!.props.content).toBe(":face_with_bags_under_eyes:");
+    });
+
+    it("pastes the emoji when the GitHub set has no code for it", async () => {
+      h.prefs.pasteFormat = "github";
+      h.suggest.mockResolvedValue({ emojis: [findEmoji("🫩")!], combos: [], routeLabel: "x" });
+      await search();
+      expect(action(itemFor("🫩"), "Paste Shortcode")!.props.content).toBe("🫩");
+    });
+
+    it("keeps pasting the emoji by default and copies the GitHub code as secondary action", async () => {
+      await search();
+      const item = itemFor("🎉");
+      expect(action(item, "Paste Emoji")!.props.content).toBe("🎉");
+      expect(action(item, "Copy Emoji")!.props.content).toBe("🎉");
+      expect(action(item, "Copy Shortcode")!.props.content).toBe(":tada:");
+    });
+
+    it("falls back to the Slack code, then the slug, for the secondary shortcode", async () => {
+      h.suggest.mockResolvedValue({ emojis: [findEmoji("🫩")!], combos: [], routeLabel: "x" });
+      await search();
+      expect(action(itemFor("🫩"), "Copy Shortcode")!.props.content).toBe(":face_with_bags_under_eyes:");
+    });
+  });
+
+  describe("selection tray", () => {
+    it("adds without closing or toasting, and shows the tray in the placeholder", async () => {
+      await search();
+      const add1 = action(itemFor("🎉"), "Add to Selection")!;
+      expect(add1.type).toBe("action");
+      expect(add1.props.shortcut).toEqual({ modifiers: ["opt"], key: "return" });
+      await add("🎉");
+      await add("🥳");
+      expect(placeholder()).toBe("Selection: 🎉🥳 — ⌥⏎ adds, ⏎ pastes");
+      expect(h.showToast).not.toHaveBeenCalled();
+      expect(h.pop).not.toHaveBeenCalled();
+      const item = itemFor("🎉");
+      const first = firstAction(item);
+      expect(first.type).toBe("action-paste");
+      expect(first.props.title).toBe("Paste Selection");
+      expect(first.props.content).toBe("🎉🥳");
+      expect(actionsOf(item).map((a) => a.props.title as string)).toEqual(
+        expect.arrayContaining([
+          "Paste Selection",
+          "Copy Selection",
+          "Add to Selection",
+          "Remove Last from Selection",
+          "Clear Selection",
+          "Paste Emoji",
+        ]),
+      );
+      expect(action(item, "Remove Last from Selection")!.props.shortcut).toEqual({
+        modifiers: ["cmd"],
+        key: "backspace",
+      });
+      expect(action(item, "Copy Selection")!.props.content).toBe("🎉🥳");
+    });
+
+    it("has no selection actions while the tray is empty", async () => {
+      await search();
+      expect(action(itemFor("🎉"), "Paste Selection")).toBeUndefined();
+      expect(firstAction(itemFor("🎉")).props.title).toBe("Paste Emoji");
+    });
+
+    it("joins GitHub shortcodes with spaces", async () => {
+      h.prefs.pasteFormat = "github";
+      await search();
+      await add("🎉");
+      await add("🥳");
+      expect(action(itemFor("🎉"), "Paste Selection")!.props.content).toBe(":tada: :partying_face:");
+      expect(placeholder()).toBe("Selection: 🎉🥳 — ⌥⏎ adds, ⏎ pastes");
+    });
+
+    it("removes the last and clears", async () => {
+      await search();
+      await add("🎉");
+      await add("🥳");
+      await press(action(itemFor("🎉"), "Remove Last from Selection"));
+      expect(placeholder()).toBe("Selection: 🎉 — ⌥⏎ adds, ⏎ pastes");
+      await press(action(itemFor("🎉"), "Clear Selection"));
+      expect(placeholder()).not.toContain("Selection");
+      expect(action(itemFor("🎉"), "Paste Selection")).toBeUndefined();
+    });
+
+    it("keeps the tray while typing", async () => {
+      await search();
+      await add("🎉");
+      await type("fire");
+      expect(placeholder()).toContain("Selection: 🎉");
+    });
+
+    it("records each emoji as used when pasting, then empties the tray", async () => {
+      await search();
+      await add("🎉");
+      await add("🥳");
+      await used(action(itemFor("🎉"), "Paste Selection"));
+      expect(recents().sort()).toEqual(["🎉", "🥳"].sort());
+      expect(Object.keys(JSON.parse(h.store.get("emoji-usage")!)).sort()).toEqual(["🎉", "🥳"].sort());
+      expect(placeholder()).not.toContain("Selection");
+    });
+
+    it("records each emoji when copying the selection", async () => {
+      await search();
+      await add("🎉");
+      await add("🥳");
+      await act(async () => void (await action(itemFor("🎉"), "Copy Selection")!.props.onCopy()));
+      expect(recents()).toHaveLength(2);
+      expect(placeholder()).not.toContain("Selection");
+    });
+
+    it("toasts when the tray is full", async () => {
+      await search();
+      for (let i = 0; i < 12; i++) await add("🎉");
+      expect(h.showToast).not.toHaveBeenCalled();
+      await add("🎉");
+      expect(h.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Selection is full" }));
+    });
+
+    it("offers the tray actions on the empty view", async () => {
+      await search();
+      await add("🎉");
+      await type("");
+      expect(sections()).toEqual([]);
+      const view = empty();
+      expect(action(view, "Paste Selection")!.props.content).toBe("🎉");
+      expect(action(view, "Copy Selection")).toBeTruthy();
+      expect(action(view, "Remove Last from Selection")).toBeTruthy();
+      expect(action(view, "Clear Selection")).toBeTruthy();
+      expect(action(view, "Add to Selection")).toBeUndefined();
+    });
+  });
+
+  describe("tone", () => {
+    it("offers a stored Tone dropdown and starts with any", async () => {
+      await search();
+      const dd = accessory();
+      expect(dd.props).toMatchObject({ tooltip: "Tone", storeValue: true });
+      const kids = React.Children.toArray(
+        (dd.props as unknown as { children: React.ReactNode }).children,
+      ) as React.ReactElement<{
+        value: string;
+      }>[];
+      expect(kids.map((k) => k.props.value)).toEqual(["any", "work", "casual", "playful"]);
+      expect(h.suggest.mock.calls[0][1]).toMatchObject({ tone: "any" });
+    });
+
+    it("asks again for the same query when the tone changes", async () => {
+      await search();
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      await act(async () => void accessory().props.onChange("work"));
+      await advance(450);
+      await flush();
+      expect(h.suggest).toHaveBeenCalledTimes(2);
+      expect(h.suggest.mock.calls[1][0]).toBe("party");
+      expect(h.suggest.mock.calls[1][1]).toMatchObject({ tone: "work" });
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+    });
+
+    it("treats an unknown stored value as any", async () => {
+      await search();
+      await act(async () => void accessory().props.onChange("bogus"));
+      await advance(450);
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("combinations", () => {
+    const combo = () => [findEmoji("🎉")!, findEmoji("🥳")!, findEmoji("🍾")!];
+    const withCombo = () => h.suggest.mockResolvedValue({ ...answer, combos: [combo()] });
+
+    it("shows combo tiles after the AI tiles", async () => {
+      withCombo();
+      await search();
+      expect(sections().map((s) => s.title)).toEqual([
+        "AI Suggestions · Claude · test",
+        "Combinations",
+        "Matching Names",
+      ]);
+      expect(sections()[1].contents).toEqual(["🎉🥳🍾"]);
+      const tile = itemFor("🎉🥳🍾");
+      expect(tile.props.title).toBe(
+        `Combo · ${combo()
+          .map((e) => e.name)
+          .join(" + ")}`,
+      );
+      const first = firstAction(tile);
+      expect(first.type).toBe("action-paste");
+      expect(first.props.title).toBe("Paste Combination");
+      expect(first.props.content).toBe("🎉🥳🍾");
+      expect(action(tile, "Copy Combination")!.props.content).toBe("🎉🥳🍾");
+      expect(action(tile, "Copy Diagnostics")).toBeTruthy();
+    });
+
+    it("puts Copy Combination first with the copy preference and uses the insert format", async () => {
+      h.prefs.primaryAction = "copy";
+      h.prefs.pasteFormat = "github";
+      withCombo();
+      await search();
+      const tile = itemFor("🎉🥳🍾");
+      expect(firstAction(tile).props.title).toBe("Copy Combination");
+      expect(action(tile, "Paste Combination")!.props.content).toBe(":tada: :partying_face: :champagne:");
+    });
+
+    it("passes combos false and shows no tiles when the preference is off", async () => {
+      h.prefs.combos = false;
+      withCombo();
+      await search();
+      expect(h.suggest.mock.calls[0][1]).toMatchObject({ combos: false });
+      expect(sections().map((s) => s.title)).not.toContain("Combinations");
+    });
+
+    it("never shows combos for the empty query", async () => {
+      withCombo();
+      await search();
+      await type("");
+      expect(sections()).toEqual([]);
+    });
+
+    it("adds every emoji of a combo to the selection", async () => {
+      withCombo();
+      await search();
+      await press(action(itemFor("🎉🥳🍾"), "Add to Selection"));
+      expect(placeholder()).toBe("Selection: 🎉🥳🍾 — ⌥⏎ adds, ⏎ pastes");
+    });
+
+    it("records each emoji of a used combo", async () => {
+      withCombo();
+      await search();
+      await used(action(itemFor("🎉🥳🍾"), "Paste Combination"));
+      expect(recents().sort()).toEqual(["🎉", "🥳", "🍾"].sort());
+    });
+  });
+
+  it("passes tone, combos and the insert format to the diagnostics", async () => {
+    h.prefs.pasteFormat = "slack";
+    await mount();
+    await press(action(empty(), "Copy Diagnostics"));
+    expect(h.diagnose.mock.calls[0][0]).toMatchObject({ tone: "any", combos: true, insertFormat: "slack" });
   });
 });

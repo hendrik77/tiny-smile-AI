@@ -1,9 +1,11 @@
 import type { EmojiEntry } from "./types";
 
 export interface GridSection {
-  id: "recent" | "ai" | "local";
+  id: "recent" | "ai" | "combos" | "local";
   title: string;
   emojis: EmojiEntry[];
+  /** Only for the "combos" section: one tile per sequence (`emojis` is empty there). */
+  combos?: EmojiEntry[][];
 }
 
 export interface SectionInput {
@@ -11,6 +13,7 @@ export interface SectionInput {
   ai: EmojiEntry[];
   local: EmojiEntry[];
   recents: EmojiEntry[];
+  combos?: EmojiEntry[][];
   aiTitle?: string;
   localLimit?: number;
 }
@@ -23,6 +26,9 @@ export function buildSections(input: SectionInput): GridSection[] {
   const sections: GridSection[] = [];
   if (input.ai.length > 0) {
     sections.push({ id: "ai", title: input.aiTitle ?? "AI Suggestions", emojis: input.ai });
+  }
+  if (input.combos && input.combos.length > 0) {
+    sections.push({ id: "combos", title: "Combinations", emojis: [], combos: input.combos });
   }
   const shown = new Set(input.ai.map((e) => e.emoji));
   const local = input.local.filter((e) => !shown.has(e.emoji)).slice(0, input.localLimit ?? 60);
