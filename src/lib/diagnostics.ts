@@ -21,6 +21,8 @@ export interface DiagnosticsInput {
 const MASK = "[redacted]";
 
 /** Masks anything that looks like a key or token. */
+const CLI_NAMES: Record<string, string> = { claude: "Claude Code", codex: "Codex" };
+
 export function redact(text: string): string {
   return text
     .replace(/\bBearer\s+\S+/gi, MASK)
@@ -122,7 +124,11 @@ export function formatDiagnostics(input: DiagnosticsInput): string {
 
   section("Speed");
   out.push(`Minimize thinking: ${input.minimizeThinking ? "on" : "off"}`);
-  out.push(`Effort sent: ${input.effort ?? "none"}`);
+  if (input.cli) {
+    out.push(`Effort sent: not used by the ${CLI_NAMES[input.cli.tool] ?? input.cli.tool} tool`);
+  } else {
+    out.push(`Effort sent: ${input.effort ?? "none"}`);
+  }
   out.push(`Suggestions: ${input.resultCount}`);
 
   if (input.lastError) {

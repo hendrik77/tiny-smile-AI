@@ -1,0 +1,14 @@
+{
+  "note": "Copy Diagnostics from a real Mac (2026-11-10): installed Claude tool as Tinycast default, no API connections",
+  "settings": {
+    "defaultModel": { "kind": "claude", "model": "haiku", "effort": "high" },
+    "connections": [],
+    "disabledRoutes": [],
+    "enabledInstalledProviders": ["claude"]
+  },
+  "rawKeys": [
+    { "name": "aiDefaultModel", "type": "data" },
+    { "name": "aiEnabled", "type": "boolean" },
+    { "name": "aiInstalledProviders", "type": "data" }
+  ]
+}
