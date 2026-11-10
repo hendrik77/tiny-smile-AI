@@ -5,7 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-11-11
+
+### Added
+
+- Multi-pick: **Add to Selection** (⌥⏎) collects up to 12 emojis while the grid stays open;
+  **Paste Selection**, **Copy Selection**, **Remove Last from Selection** (⌘⌫) and **Clear
+  Selection**. The selection is shown in the search bar placeholder.
+- Tone dropdown next to the search field (Any, Work, Casual, Playful), remembered and part of the
+  cache key.
+- Insert As preference: paste and copy the emoji, a GitHub shortcode or a Slack shortcode.
+- Combinations: the AI also suggests short emoji sequences, shown as "Combo · …" tiles
+  (preference **Combinations**).
+- Built-in answers: about 265 common searches in English and German are answered at once without
+  the AI (tone "Any" only; preference **Built-in Answers**).
+- Search memory: your searches and their answers are remembered on this Mac, answered at once on
+  repeat, and listed as "Search · …" tiles on the start screen with **Show Results**, **Forget This
+  Search** (⌃X), **Clear Search Memory** and **Back to Start**. Selected text is never stored
+  (preference **Search Memory**). Like the built-in answers it applies only to the tone "Any".
+- **Refresh Suggestions** (⌘R): asks the AI again for the current search, bypassing built-in and
+  remembered answers and the cache, and replaces the stored answer.
+- Copy Diagnostics reports the answer source, the search memory counts and the built-in table
+  (never any search text).
 
 ### Changed
 
@@ -15,6 +36,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Emojis picked, or a model chosen, in the first moments after opening (before the stored recents,
+  usage counts and model choice had been read) no longer overwrite or get lost against the stored
+  data; clearing the recents in that moment sticks.
+- A pick from a launcher-selected text no longer counts for a remembered search.
 - Clearing the field and quickly typing something new no longer fires a request for the text that
   was cleared.
 

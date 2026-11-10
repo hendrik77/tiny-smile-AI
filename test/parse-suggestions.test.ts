@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSuggestions } from "../src/lib/parse-suggestions";
+import { parseAnswer, parseSuggestions } from "../src/lib/parse-suggestions";
 
 const em = (t: string, l = 50) => parseSuggestions(t, l).map((e) => e.emoji);
 
@@ -51,5 +51,61 @@ describe("parseSuggestions", () => {
   });
   it("brackets inside strings don't confuse", () => {
     expect(em('Note [1]: ["🔥","🚀"]')).toEqual(["🔥", "🚀"]);
+  });
+});
+
+describe("parseAnswer", () => {
+  const ans = (t: string, l = 50) => {
+    const r = parseAnswer(t, l);
+    return { emojis: r.emojis.map((e) => e.emoji), combos: r.combos.map((c) => c.map((e) => e.emoji)) };
+  };
+  it("object", () => {
+    expect(ans('{"emojis":["🔥","🚀"],"combos":[["🎉","🥳"],["🔥","💯","🚀"]]}')).toEqual({
+      emojis: ["🔥", "🚀"],
+      combos: [
+        ["🎉", "🥳"],
+        ["🔥", "💯", "🚀"],
+      ],
+    });
+  });
+  it("fenced", () => {
+    expect(ans('```json\n{"emojis":["🔥"],"combos":[["🎉","🥳"]]}\n```').combos).toEqual([["🎉", "🥳"]]);
+  });
+  it("prose around, last object wins", () => {
+    const t = 'Hm {"emojis":["🐶"]} better: {"emojis":["🐱"],"combos":[["🎉","🥳"]]} done {x}';
+    expect(ans(t)).toEqual({ emojis: ["🐱"], combos: [["🎉", "🥳"]] });
+  });
+  it("plain array falls back", () => {
+    expect(ans('["🔥","🚀"]')).toEqual({ emojis: ["🔥", "🚀"], combos: [] });
+  });
+  it("object without combos", () => {
+    expect(ans('{"emojis":["🔥"]}')).toEqual({ emojis: ["🔥"], combos: [] });
+  });
+  it("drops combos with unresolvable, too short or too long", () => {
+    const t =
+      '{"emojis":["🔥"],"combos":[["🎉","qqxxv not an emoji"],["🎉"],["🎉","🥳","🍾","🔥","🚀"],["🎉","🥳","🍾","🔥"],"nope",5]}';
+    expect(ans(t).combos).toEqual([["🎉", "🥳", "🍾", "🔥"]]);
+  });
+  it("string combo is split by grapheme", () => {
+    expect(ans('{"emojis":["🔥"],"combos":["🎉🥳🍾","👨‍👩‍👧❤️"]}').combos).toEqual([
+      ["🎉", "🥳", "🍾"],
+      ["👨‍👩‍👧", "❤️"],
+    ]);
+  });
+  it("max 3 combos and duplicates dropped", () => {
+    const t = '{"emojis":["🔥"],"combos":[["🎉","🥳"],["🎉","🥳"],["🔥","🚀"],["🐶","🐱"],["🍕","🍺"]]}';
+    expect(ans(t).combos).toEqual([
+      ["🎉", "🥳"],
+      ["🔥", "🚀"],
+      ["🐶", "🐱"],
+    ]);
+  });
+  it("respects the emoji limit", () => {
+    expect(ans('{"emojis":["🔥","🚀","🎉"]}', 2).emojis).toEqual(["🔥", "🚀"]);
+  });
+  it("garbage gives nothing", () => {
+    expect(ans("no emoji here")).toEqual({ emojis: [], combos: [] });
+    expect(ans("")).toEqual({ emojis: [], combos: [] });
+    expect(ans('{"emojis": [')).toEqual({ emojis: [], combos: [] });
   });
 });

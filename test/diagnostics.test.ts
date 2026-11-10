@@ -227,6 +227,13 @@ describe("name search section", () => {
   });
 });
 
+describe("insert format", () => {
+  it("reports the format, defaulting to emoji", () => {
+    expect(formatDiagnostics(input({ insertFormat: "github" }))).toContain("Insert as: github");
+    expect(formatDiagnostics(input())).toContain("Insert as: emoji");
+  });
+});
+
 describe("launch section", () => {
   const launch = (over: Partial<NonNullable<DiagnosticsInput["launch"]>> = {}) => ({
     querySource: "none" as const,
@@ -274,5 +281,65 @@ describe("launch section", () => {
     );
     expect(out).toContain("Query source: none");
     expect(out).toContain("Selected text: not used: No selection [redacted]");
+  });
+});
+
+describe("answer source and memory lines", () => {
+  const launch = (over: Partial<NonNullable<DiagnosticsInput["launch"]>> = {}) => ({
+    querySource: "none" as const,
+    selection: { status: "off" as const },
+    recents: [] as string[],
+    usageEntries: 0,
+    ...over,
+  });
+  it("reports the source, memory counts and the built-in table", () => {
+    const out = formatDiagnostics(
+      input({
+        launch: launch({
+          answerSource: "memory",
+          searchMemory: { recent: 3, frequent: 5 },
+          builtin: { entries: 265 },
+        }),
+      }),
+    );
+    expect(out).toContain("Answer source: memory");
+    expect(out).toContain("Search memory: 3 recent, 5 frequent");
+    expect(out).toContain("Built-in answers: on (265 entries)");
+  });
+  it("names built-in and none, and the preferences when off", () => {
+    const out = formatDiagnostics(
+      input({ launch: launch({ answerSource: "builtin", searchMemory: "off", builtin: "off" }) }),
+    );
+    expect(out).toContain("Answer source: built-in");
+    expect(out).toContain("Search memory: off (preference)");
+    expect(out).toContain("Built-in answers: off (preference)");
+    expect(formatDiagnostics(input({ launch: launch() }))).toContain("Answer source: none");
+  });
+  it("names a remembered search as the query source", () => {
+    expect(formatDiagnostics(input({ launch: launch({ querySource: "memory" }) }))).toContain(
+      "Query source: remembered search",
+    );
+  });
+  it("never contains a query text", () => {
+    const out = formatDiagnostics(
+      input({ launch: launch({ answerSource: "memory", searchMemory: { recent: 1, frequent: 0 } }) }),
+    );
+    expect(out).not.toMatch(/finally friday/);
+    expect(Object.keys(launch({ searchMemory: { recent: 1, frequent: 0 } }))).not.toContain("queries");
+  });
+});
+
+describe("tone and combinations lines", () => {
+  it("prints them next to the speed settings", () => {
+    const text = formatDiagnostics(input({ tone: "work", combos: true }));
+    expect(text).toContain("Tone: work");
+    expect(text).toContain("Combinations: on");
+    expect(text.indexOf("Tone: work")).toBeGreaterThan(text.indexOf("## Speed"));
+    expect(text.indexOf("Tone: work")).toBeLessThan(text.indexOf("## Name search"));
+  });
+  it("defaults to any and off", () => {
+    const text = formatDiagnostics(input());
+    expect(text).toContain("Tone: any");
+    expect(text).toContain("Combinations: off");
   });
 });

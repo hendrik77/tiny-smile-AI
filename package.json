@@ -1,7 +1,7 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "tiny-smile-ai",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "title": "Tiny Smile AI",
   "description": "AI emoji search for Tinycast: describe a mood or situation and pick from fitting emojis suggested by your Tinycast AI model.",
   "icon": "icon.png",
@@ -167,6 +167,55 @@
       "label": "Use the selected text when the command starts",
       "description": "The selection of the frontmost app is used as the first search and sent to the AI like typed text. Nothing is read when you give the command an argument.",
       "default": true
+    },
+    {
+      "name": "pasteFormat",
+      "type": "dropdown",
+      "required": false,
+      "title": "Insert As",
+      "description": "What Paste and Copy insert: the emoji itself or a shortcode for apps that expect one.",
+      "default": "emoji",
+      "data": [
+        {
+          "title": "Emoji",
+          "value": "emoji"
+        },
+        {
+          "title": "GitHub Shortcode (:tada:)",
+          "value": "github"
+        },
+        {
+          "title": "Slack Shortcode (:tada:)",
+          "value": "slack"
+        }
+      ]
+    },
+    {
+      "name": "combos",
+      "type": "checkbox",
+      "required": false,
+      "title": "Combinations",
+      "label": "Also suggest ready-made emoji combinations",
+      "description": "Ask the AI for a few short emoji sequences in addition to single emojis.",
+      "default": true
+    },
+    {
+      "name": "builtin",
+      "type": "checkbox",
+      "required": false,
+      "title": "Built-in Answers",
+      "label": "Answer common searches instantly without the AI",
+      "description": "Use prepared emojis for frequent searches such as thanks or birthday. The AI can still be asked with Refresh Suggestions.",
+      "default": true
+    },
+    {
+      "name": "searchMemory",
+      "type": "checkbox",
+      "required": false,
+      "title": "Search Memory",
+      "label": "Remember recent and frequent searches",
+      "description": "Keep your searches and their answers on this Mac, show them on the empty screen and answer them instantly.",
+      "default": true
     }
   ],
   "dependencies": {
@@ -190,7 +239,7 @@
     "build": "ray build -e dist -o dist",
     "dev": "ray develop",
     "test": "vitest run",
-    "build:data": "node scripts/build-emoji-data.mjs && node scripts/build-keywords.mjs",
+    "build:data": "node scripts/build-emoji-data.mjs && node scripts/build-keywords.mjs && node scripts/build-shortcodes.mjs",
     "typecheck": "tsc --noEmit && tsc -p eval/tsconfig.json",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",

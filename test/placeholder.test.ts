@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PLACEHOLDER, searchPlaceholder, shortenQuery } from "../src/lib/placeholder";
 
-const base = { typed: "", initialQuery: "", source: null, hasRecents: false } as const;
+const base = { typed: "", initialQuery: "", source: null, hasRecents: false, tray: [] as string[] } as const;
 
 describe("shortenQuery", () => {
   it("collapses whitespace and cuts at the limit with an ellipsis", () => {
@@ -44,6 +44,36 @@ describe("searchPlaceholder", () => {
   it("prefers the initial query over recents", () => {
     expect(searchPlaceholder({ ...base, initialQuery: "hi", source: "argument", hasRecents: true })).toContain(
       "Emojis for “hi”",
+    );
+  });
+});
+
+describe("searchPlaceholder with a selection tray", () => {
+  it("shows the tray before everything else, also while typing", () => {
+    const expected = "Selection: 🎉🥳 — ⌥⏎ adds, ⏎ pastes";
+    expect(searchPlaceholder({ ...base, tray: ["🎉", "🥳"] })).toBe(expected);
+    expect(searchPlaceholder({ ...base, typed: "party", hasRecents: true, tray: ["🎉", "🥳"] })).toBe(expected);
+    expect(searchPlaceholder({ ...base, initialQuery: "x", source: "argument", tray: ["🎉", "🥳"] })).toBe(expected);
+  });
+});
+
+describe("searchPlaceholder with search memory", () => {
+  it("names a remembered search chosen as the initial query", () => {
+    expect(searchPlaceholder({ ...base, initialQuery: "finally friday", source: "memory" })).toBe(
+      "Results for “finally friday” — type to search something else",
+    );
+  });
+  it("hints at the searches on the empty screen", () => {
+    expect(searchPlaceholder({ ...base, hasSearches: true })).toBe(
+      "Your searches — describe a feeling, situation or thing…",
+    );
+    expect(searchPlaceholder({ ...base, hasSearches: true, hasRecents: true })).toBe(
+      "Recently used and your searches — describe a feeling, situation or thing…",
+    );
+  });
+  it("keeps the default while typing", () => {
+    expect(searchPlaceholder({ ...base, typed: "party", hasSearches: true, hasRecents: true })).toBe(
+      DEFAULT_PLACEHOLDER,
     );
   });
 });

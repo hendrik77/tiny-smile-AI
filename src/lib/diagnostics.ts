@@ -3,10 +3,14 @@ import type { AIConnection, ModelSelection, RouteOverride, RouteResolution, Tiny
 
 /** What happened at launch. Never carries the selected text itself. */
 export interface LaunchInfo {
-  querySource: "argument" | "selection" | "none";
+  querySource: "argument" | "selection" | "memory" | "none";
   selection: { status: "off" } | { status: "used"; length: number } | { status: "unused"; reason?: string };
   recents: string[];
   usageEntries: number;
+  /** Where the shown answer came from; counts only, never query texts. */
+  answerSource?: "ai" | "memory" | "builtin" | "none";
+  searchMemory?: { recent: number; frequent: number } | "off";
+  builtin?: { entries: number } | "off";
 }
 
 export interface DiagnosticsInput {
@@ -27,6 +31,9 @@ export interface DiagnosticsInput {
   language?: string;
   systemLocale?: string;
   skinTone?: string;
+  tone?: string;
+  combos?: boolean;
+  insertFormat?: string;
   launch?: LaunchInfo;
 }
 
@@ -142,6 +149,9 @@ export function formatDiagnostics(input: DiagnosticsInput): string {
     out.push(`Effort sent: ${input.effort ?? "none"}`);
   }
   out.push(`Suggestions: ${input.resultCount}`);
+  out.push(`Tone: ${input.tone ?? "any"}`);
+  out.push(`Combinations: ${input.combos ? "on" : "off"}`);
+  out.push(`Insert as: ${input.insertFormat ?? "emoji"}`);
 
   section("Name search");
   out.push(`Language: ${input.language ?? "en"}`);
@@ -151,7 +161,8 @@ export function formatDiagnostics(input: DiagnosticsInput): string {
   if (input.launch) {
     const { launch } = input;
     section("Launch");
-    out.push(`Query source: ${launch.querySource === "selection" ? "selected text" : launch.querySource}`);
+    const sourceNames = { selection: "selected text", memory: "remembered search" } as const;
+    out.push(`Query source: ${sourceNames[launch.querySource as "selection" | "memory"] ?? launch.querySource}`);
     const sel = launch.selection;
     out.push(
       sel.status === "off"
@@ -163,6 +174,21 @@ export function formatDiagnostics(input: DiagnosticsInput): string {
     const first = launch.recents.slice(0, 8);
     out.push(`Recents: ${launch.recents.length}${first.length > 0 ? ` (${first.join(" ")})` : ""}`);
     out.push(`Usage entries: ${launch.usageEntries}`);
+    const answerNames = { builtin: "built-in" } as const;
+    const answerSource = launch.answerSource ?? "none";
+    out.push(`Answer source: ${answerNames[answerSource as "builtin"] ?? answerSource}`);
+    const memory = launch.searchMemory;
+    out.push(
+      !memory || memory === "off"
+        ? "Search memory: off (preference)"
+        : `Search memory: ${memory.recent} recent, ${memory.frequent} frequent`,
+    );
+    const builtin = launch.builtin;
+    out.push(
+      !builtin || builtin === "off"
+        ? "Built-in answers: off (preference)"
+        : `Built-in answers: on (${builtin.entries} entries)`,
+    );
   }
 
   if (input.lastError) {
