@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixture from "./fixtures/real-claude-cli-haiku.json";
+import appleFixture from "./fixtures/real-apple-default-claude-cli.json";
 import { formatDiagnostics } from "../src/lib/diagnostics";
 import { listRouteChoices, resolveRoute, routeLabel } from "../src/lib/tinycast-settings";
 import type { TinycastAISettings } from "../src/lib/types";
@@ -47,5 +48,30 @@ describe("real Mac: installed Claude tool as default, no API connections", () =>
     expect(report).toContain("Resolved route: Claude Code · haiku");
     expect(report).toContain("Effort sent: not used by the Claude Code tool");
     expect(report).not.toContain("Effort sent: none");
+  });
+});
+
+describe("real Mac: Apple Intelligence as default, installed Claude tool on, no API connections", () => {
+  const settings = appleFixture.settings as TinycastAISettings;
+
+  it("uses Claude Code with its own default model instead of failing", () => {
+    const resolution = resolveRoute(settings);
+    expect(resolution.ok).toBe(true);
+    if (!resolution.ok) return;
+    expect(resolution.route).toEqual({ kind: "cli", tool: "claude", model: "" });
+    expect(routeLabel(resolution.route)).toBe("Claude Code · default model");
+  });
+
+  it("marks that route as the default in the picker", () => {
+    const choices = listRouteChoices(settings);
+    expect(choices.filter((c) => c.isDefault).map((c) => c.id)).toEqual(["cli:claude:"]);
+  });
+
+  it("explains the problem when the Claude tool is switched off again", () => {
+    const resolution = resolveRoute({ ...settings, enabledInstalledProviders: [] });
+    expect(resolution.ok).toBe(false);
+    if (resolution.ok) return;
+    expect(resolution.reason).toMatch(/Apple Intelligence/);
+    expect(resolution.reason).toMatch(/Claude or Codex tool/);
   });
 });
