@@ -96,6 +96,7 @@ vi.mock("../src/lib/suggest", async (importActual) => {
 import Command from "../src/ai-emoji-search";
 import { findEmoji } from "../src/lib/emoji-data";
 import { NoRouteError } from "../src/lib/suggest";
+import { MAX_SELECTION_LENGTH } from "../src/emoji-grid";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -513,12 +514,37 @@ describe("ai-emoji-search command", () => {
       expect(h.suggest).toHaveBeenCalledTimes(1);
     });
 
-    it("caps long text at 500 characters and shortens the placeholder", async () => {
-      h.selected.mockResolvedValue("y".repeat(700));
-      await mount();
+    it("caps a long launcher argument at 500 characters and shortens the placeholder", async () => {
+      await mount({ arguments: { query: "y".repeat(700) } });
       expect(h.suggest.mock.calls[0][0]).toBe("y".repeat(500));
       expect(placeholder()).toContain("…");
       expect(placeholder()).not.toContain("y".repeat(31));
+    });
+
+    it("uses a selection of exactly the limit (300 characters)", async () => {
+      expect(MAX_SELECTION_LENGTH).toBe(300);
+      h.selected.mockResolvedValue(` ${"y".repeat(MAX_SELECTION_LENGTH)} `);
+      await mount();
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      expect(h.suggest.mock.calls[0][0]).toBe("y".repeat(MAX_SELECTION_LENGTH));
+    });
+
+    it("does not use or send a selection longer than the limit, and says why in the diagnostics", async () => {
+      h.selected.mockResolvedValue("y".repeat(MAX_SELECTION_LENGTH + 1));
+      await mount();
+      await advance(1000);
+      expect(h.suggest).not.toHaveBeenCalled();
+      expect(empty().props.title).toBe("Describe what you want to express");
+      await act(
+        async () =>
+          void (await renderer.root
+            .findAllByType("action" as never)
+            .find((a) => a.props.title === "Copy Diagnostics")!
+            .props.onAction()),
+      );
+      const launch = h.diagnose.mock.calls[0][0].launch;
+      expect(launch.querySource).toBe("none");
+      expect(launch.selection).toEqual({ status: "unused", reason: "selection is longer than 300 characters" });
     });
 
     it.each([
@@ -647,6 +673,22 @@ describe("ai-emoji-search command", () => {
       expect(h.suggest).not.toHaveBeenCalled();
       await advance(200);
       expect(h.suggest).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("clear and retype", () => {
+    it("does not ask again for the old query when the field is cleared and retyped quickly", async () => {
+      await mount();
+      await type("cat");
+      await advance(450);
+      await flush();
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      await type("");
+      await advance(100);
+      await type("dog");
+      await advance(450);
+      await flush();
+      expect(h.suggest.mock.calls.map((c) => c[0])).toEqual(["cat", "dog"]);
     });
   });
 
