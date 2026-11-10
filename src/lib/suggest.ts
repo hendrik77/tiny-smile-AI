@@ -1,7 +1,7 @@
 import { readApiKey, readRequestHeaders } from "./keychain";
 import { parseSuggestions } from "./parse-suggestions";
 import { buildEmojiPrompt } from "./prompt";
-import { formatDiagnostics, type DiagnosticsInput } from "./diagnostics";
+import { formatDiagnostics, type DiagnosticsInput, type LaunchInfo } from "./diagnostics";
 import { callApi, callCli, fastestEffort, findExecutable } from "./providers";
 import { listRouteChoices, readTinycastAISettingsDetailed, resolveRoute, routeLabel } from "./tinycast-settings";
 
@@ -52,6 +52,7 @@ export interface DiagnoseOptions {
   language?: string;
   systemLocale?: string;
   skinTone?: string;
+  launch?: LaunchInfo;
 }
 
 export interface SuggestResult {
@@ -229,6 +230,7 @@ export function createSuggester(deps: SuggesterDeps) {
       language: options.language,
       systemLocale: options.systemLocale,
       skinTone: options.skinTone,
+      launch: options.launch,
     };
     try {
       if (deps.raycastAsk) return formatDiagnostics(base);

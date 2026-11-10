@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   suggest: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
-  prefs: { channel: "com.tinycast.app", resultCount: "24", primaryAction: "paste" } as Record<string, string>,
+  prefs: { channel: "com.tinycast.app", resultCount: "24", primaryAction: "paste" } as Record<string, string | boolean>,
   selected: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
   store: new Map<string, string>(),
   showToast: undefined as unknown as ReturnType<typeof import("vitest").vi.fn>,
@@ -107,6 +107,7 @@ const sections = () =>
     title: s.props.title as string,
     contents: s.findAllByType("grid-item" as never).map((i) => i.props.content as string),
   }));
+const placeholder = () => grid().props.searchBarPlaceholder as string;
 const empty = () => renderer.root.findAllByType("grid-empty" as never)[0];
 const type = (text: string) => act(() => void grid().props.onSearchTextChange(text));
 const advance = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
@@ -143,6 +144,9 @@ beforeEach(async () => {
   vi.useFakeTimers();
   h.store.clear();
   h.prefs.primaryAction = "paste";
+  delete h.prefs.useSelection;
+  h.selected.mockReset();
+  h.selected.mockRejectedValue(new Error("nothing selected"));
   h.suggest.mockReset();
   h.suggest.mockResolvedValue(answer);
   h.showToast.mockReset();
@@ -471,6 +475,167 @@ describe("ai-emoji-search command", () => {
       await advance(1000);
       expect(h.suggest).not.toHaveBeenCalled();
       expect(empty().props.title).toBe("Describe what you want to express");
+    });
+  });
+
+  describe("selected text at launch", () => {
+    const deferred = () => {
+      let resolve!: (v: string) => void;
+      let reject!: (e: Error) => void;
+      const promise = new Promise<string>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    };
+
+    it("renders the empty state first, then asks at once with the trimmed selection", async () => {
+      h.prefs.useSelection = true;
+      const d = deferred();
+      h.selected.mockReturnValue(d.promise);
+      await mount();
+      expect(empty().props.title).toBe("Describe what you want to express");
+      expect(placeholder()).toBe("Describe a feeling, situation or thing…");
+      expect(h.suggest).not.toHaveBeenCalled();
+      await act(async () => d.resolve("  finally friday \n"));
+      await flush();
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      expect(h.suggest.mock.calls[0][0]).toBe("finally friday");
+      expect(placeholder()).toBe("Emojis for selected text “finally friday” — type to search something else");
+      expect(sections()[0].contents).toEqual(["🎉", "🥳"]);
+      expect(h.showToast).not.toHaveBeenCalled();
+    });
+
+    it("reads the selection by default (preference unset)", async () => {
+      h.selected.mockResolvedValue("finally friday");
+      await mount();
+      expect(h.selected).toHaveBeenCalledTimes(1);
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+    });
+
+    it("caps long text at 500 characters and shortens the placeholder", async () => {
+      h.selected.mockResolvedValue("y".repeat(700));
+      await mount();
+      expect(h.suggest.mock.calls[0][0]).toBe("y".repeat(500));
+      expect(placeholder()).toContain("…");
+      expect(placeholder()).not.toContain("y".repeat(31));
+    });
+
+    it.each([
+      ["rejects", () => Promise.reject(new Error("nothing selected"))],
+      ["is blank", () => Promise.resolve("   \n ")],
+    ])("stays quiet and empty when the selection %s", async (_name, impl) => {
+      h.selected.mockImplementation(impl);
+      await mount();
+      await advance(1000);
+      expect(h.showToast).not.toHaveBeenCalled();
+      expect(h.suggest).not.toHaveBeenCalled();
+      expect(empty().props.title).toBe("Describe what you want to express");
+      expect(placeholder()).toBe("Describe a feeling, situation or thing…");
+    });
+
+    it("ignores the selection when the user typed before it resolved", async () => {
+      const d = deferred();
+      h.selected.mockReturnValue(d.promise);
+      await mount();
+      await type("party");
+      await act(async () => d.resolve("finally friday"));
+      await advance(450);
+      await flush();
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+      expect(h.suggest.mock.calls[0][0]).toBe("party");
+      await type("");
+      await flush();
+      expect(placeholder()).toBe("Describe a feeling, situation or thing…");
+      expect(h.suggest).toHaveBeenCalledTimes(1);
+    });
+
+    it("typed text wins and clearing returns to the selection", async () => {
+      h.selected.mockResolvedValue("finally friday");
+      await mount();
+      await type("party");
+      await advance(450);
+      await flush();
+      expect(h.suggest).toHaveBeenLastCalledWith("party", expect.anything());
+      expect(placeholder()).toBe("Describe a feeling, situation or thing…");
+      await type("");
+      await flush();
+      expect(placeholder()).toContain("Emojis for selected text “finally friday”");
+    });
+
+    it("never reads the selection when the preference is off", async () => {
+      h.prefs.useSelection = false;
+      h.selected.mockResolvedValue("finally friday");
+      await mount();
+      await advance(1000);
+      expect(h.selected).not.toHaveBeenCalled();
+      expect(h.suggest).not.toHaveBeenCalled();
+    });
+
+    it("never reads the selection when an argument is given", async () => {
+      h.selected.mockResolvedValue("other text");
+      await mount({ arguments: { query: "finally friday" } });
+      await flush();
+      expect(h.selected).not.toHaveBeenCalled();
+      expect(h.suggest.mock.calls[0][0]).toBe("finally friday");
+      expect(placeholder()).toBe("Emojis for “finally friday” — type to search something else");
+    });
+  });
+
+  describe("placeholder", () => {
+    it("hints at recents with an empty field and goes back to the default when typing", async () => {
+      h.store.set("recent-emojis", JSON.stringify(["🎉"]));
+      await mount();
+      expect(placeholder()).toBe("Recently used — describe a feeling, situation or thing…");
+      await type("party");
+      expect(placeholder()).toBe("Describe a feeling, situation or thing…");
+    });
+  });
+
+  describe("launch diagnostics", () => {
+    const report = async () => {
+      await act(
+        async () =>
+          void (await renderer.root
+            .findAllByType("action" as never)
+            .find((a) => a.props.title === "Copy Diagnostics")!
+            .props.onAction()),
+      );
+      return h.diagnose.mock.calls[0][0].launch;
+    };
+
+    it("passes a used selection by length, never the text", async () => {
+      h.selected.mockResolvedValue("finally friday");
+      h.store.set("recent-emojis", JSON.stringify(["🎉", "🥳"]));
+      h.store.set("emoji-usage", JSON.stringify({ "🎉": { count: 1, last: 1 } }));
+      await mount();
+      const launch = await report();
+      expect(launch).toEqual({
+        querySource: "selection",
+        selection: { status: "used", length: 14 },
+        recents: ["🎉", "🥳"],
+        usageEntries: 1,
+      });
+      expect(JSON.stringify(h.diagnose.mock.calls[0][0])).not.toContain("finally friday");
+    });
+
+    it("passes the reason when the selection was not available", async () => {
+      await mount();
+      expect((await report()).selection).toEqual({ status: "unused", reason: "nothing selected" });
+      expect(h.diagnose.mock.calls[0][0].launch.querySource).toBe("none");
+    });
+
+    it("passes off for the preference", async () => {
+      h.prefs.useSelection = false;
+      await mount();
+      expect((await report()).selection).toEqual({ status: "off" });
+    });
+
+    it("passes argument as source and says the selection was not read", async () => {
+      await mount({ arguments: { query: "hello" } });
+      const launch = await report();
+      expect(launch.querySource).toBe("argument");
+      expect(launch.selection.status).toBe("unused");
     });
   });
 

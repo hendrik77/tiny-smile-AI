@@ -11,6 +11,7 @@ import {
   Toast,
   environment,
   getPreferenceValues,
+  getSelectedText,
   showToast,
 } from "@raycast/api";
 import { existsSync } from "fs";
@@ -23,6 +24,8 @@ import { searchLocal } from "./lib/local-search";
 import { debounceDelay } from "./lib/request-policy";
 import { applySkinTone, parseSkinTone } from "./lib/skin-tone";
 import { parseUsageStore, rankByUsage, recordUse, type UsageStore } from "./lib/usage";
+import { searchPlaceholder, shortenQuery } from "./lib/placeholder";
+import type { LaunchInfo } from "./lib/diagnostics";
 import { buildSections } from "./lib/sections";
 import { NoRouteError, createSuggester, type SuggesterDeps } from "./lib/suggest";
 import type { EmojiEntry, FetchFn, RouteChoice, RouteOverride } from "./lib/types";
@@ -133,9 +136,37 @@ function systemLocale(): string | undefined {
   }
 }
 
-function shorten(query: string): string {
-  const flat = query.replace(/\s+/g, " ");
-  return flat.length > MAX_TITLE_QUERY ? `${flat.slice(0, MAX_TITLE_QUERY - 1).trimEnd()}…` : flat;
+const shorten = (query: string) => shortenQuery(query, MAX_TITLE_QUERY);
+
+function cleanQuery(text: string | undefined): string {
+  return (text ?? "").trim().slice(0, MAX_INITIAL_QUERY).trim();
+}
+
+type SelectionState = { status: "pending" } | { status: "used"; text: string } | { status: "unused"; reason: string };
+
+/** Reads the selection of the frontmost app in the background, once; never toasts. */
+function useLaunchSelection(enabled: boolean, hasTyped: React.RefObject<boolean>): SelectionState {
+  const [state, setState] = useState<SelectionState>({ status: "pending" });
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    getSelectedText()
+      .then((raw) => {
+        if (cancelled) return;
+        const text = cleanQuery(raw);
+        if (hasTyped.current) setState({ status: "unused", reason: "typed before the selection was read" });
+        else if (!text) setState({ status: "unused", reason: "selection is blank" });
+        else setState({ status: "used", text });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setState({ status: "unused", reason: error instanceof Error ? error.message : String(error) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, hasTyped]);
+  return state;
 }
 
 function parseOverride(raw: string | undefined): RouteOverride | null {
@@ -182,8 +213,8 @@ function useModelOverride() {
   return { ...state, choose };
 }
 
-export function EmojiGrid(props: { initialQuery?: string }) {
-  const initialQuery = (props.initialQuery ?? "").trim().slice(0, MAX_INITIAL_QUERY).trim();
+export function EmojiGrid(props: { argumentQuery?: string }) {
+  const argumentQuery = cleanQuery(props.argumentQuery);
   const preferences = getPreferenceValues<Preferences>();
   const bundleId = preferences.channel || "com.tinycast.app";
   const count = Number(preferences.resultCount) || 24;
@@ -195,6 +226,16 @@ export function EmojiGrid(props: { initialQuery?: string }) {
 
   const suggester = useRef<ReturnType<typeof createSuggester>>(null);
   if (!suggester.current) suggester.current = createSuggester(makeDeps());
+
+  const useSelection = preferences.useSelection !== false;
+  const hasTyped = useRef(false);
+  const selection = useLaunchSelection(!argumentQuery && useSelection, hasTyped);
+  const initialQuery = argumentQuery || (selection.status === "used" ? selection.text : "");
+  const querySource: LaunchInfo["querySource"] = argumentQuery
+    ? "argument"
+    : selection.status === "used"
+      ? "selection"
+      : "none";
 
   const [searchText, setSearchText] = useState("");
   const typed = searchText.trim();
@@ -224,6 +265,18 @@ export function EmojiGrid(props: { initialQuery?: string }) {
       language,
       systemLocale: locale,
       skinTone,
+      launch: {
+        querySource,
+        selection: !useSelection
+          ? { status: "off" }
+          : argumentQuery
+            ? { status: "unused", reason: "an argument was given" }
+            : selection.status === "used"
+              ? { status: "used", length: selection.text.length }
+              : { status: "unused", reason: selection.status === "unused" ? selection.reason : "not read yet" },
+        recents: recents.map((e) => e.emoji),
+        usageEntries: Object.keys(usage).length,
+      },
     });
     await Clipboard.copy(report);
     await showToast({
@@ -315,8 +368,16 @@ export function EmojiGrid(props: { initialQuery?: string }) {
       inset={Grid.Inset.Small}
       filtering={false}
       isLoading={waitingForAI}
-      searchBarPlaceholder="Describe a feeling, situation or thing…"
-      onSearchTextChange={setSearchText}
+      searchBarPlaceholder={searchPlaceholder({
+        typed,
+        initialQuery,
+        source: querySource === "none" ? null : querySource,
+        hasRecents: recents.length > 0,
+      })}
+      onSearchTextChange={(text) => {
+        if (text.trim()) hasTyped.current = true;
+        setSearchText(text);
+      }}
     >
       {sections.length === 0 ? (
         <Grid.EmptyView

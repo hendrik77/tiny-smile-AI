@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-10
+
+### Added
+
+- Selected Text preference (on by default): the selection of the frontmost app is used as the first
+  search when the command starts.
+- Launch section in Copy Diagnostics (query source, whether the selection was used, recents, usage
+  entries); the selected text itself is never included.
+
+### Changed
+
+- One command: the separate "AI Emoji for Selected Text" command is gone, its behaviour is the
+  default of AI Emoji Search. The selection is read in the background, so the grid opens at once,
+  and nothing is shown when there is no selection.
+- The search bar placeholder shows the state ("Emojis for selected text “…”", "Recently used"),
+  because Tinycast hides grid section titles.
+
+### Fixed
+
+- The README no longer claims that the model name is visible in the grid; it is only in the
+  section title in Raycast.
+
 ## [1.1.0] - 2026-11-10
 
 ### Added
