@@ -2,7 +2,7 @@ import data from "unicode-emoji-json/data-by-emoji.json";
 import emojilib from "emojilib";
 import type { EmojiEntry } from "./types";
 
-type RawEntry = { name: string; slug: string; group: string };
+type RawEntry = { name: string; slug: string; group: string; skin_tone_support?: boolean };
 
 export const EMOJIS: EmojiEntry[] = Object.entries(data as Record<string, RawEntry>).map(([emoji, raw]) => {
   const keywords: string[] = [];
@@ -10,7 +10,14 @@ export const EMOJIS: EmojiEntry[] = Object.entries(data as Record<string, RawEnt
     const kw = k.toLowerCase();
     if (kw !== raw.slug && !keywords.includes(kw)) keywords.push(kw);
   }
-  return { emoji, name: raw.name, slug: raw.slug, group: raw.group, keywords };
+  return {
+    emoji,
+    name: raw.name,
+    slug: raw.slug,
+    group: raw.group,
+    keywords,
+    skinTone: raw.skin_tone_support === true,
+  };
 });
 
 /** Strip variation selectors and skin tone modifiers, and trim, for comparison purposes. */

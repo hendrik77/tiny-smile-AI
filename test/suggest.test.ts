@@ -85,6 +85,41 @@ describe("createSuggester", () => {
     expect((d.fetch as unknown as { mock: ReturnType<typeof vi.fn> }).mock).toHaveBeenCalledTimes(2);
   });
 
+  it("shares one request between concurrent identical calls", async () => {
+    const d = deps();
+    const suggest = createSuggester(d);
+    const o = { bundleId: "com.tinycast.app", count: 24 };
+    const [a, b] = await Promise.all([suggest("party", o), suggest(" Party ", o)]);
+    expect(a.emojis.map((e) => e.emoji)).toEqual(["🔥", "💯", "🚀"]);
+    expect(b.emojis).toEqual(a.emojis);
+    expect((d.fetch as unknown as { mock: ReturnType<typeof vi.fn> }).mock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not share requests between different queries", async () => {
+    const d = deps();
+    const suggest = createSuggester(d);
+    const o = { bundleId: "com.tinycast.app", count: 24 };
+    await Promise.all([suggest("party", o), suggest("cake", o)]);
+    expect((d.fetch as unknown as { mock: ReturnType<typeof vi.fn> }).mock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not memoize failures: the next call asks again", async () => {
+    const mock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500, text: async () => "down" })
+      .mockResolvedValue({ ok: true, status: 200, text: async () => anthropicAnswer('["🔥"]') });
+    const d = deps({ fetch: ((u: string, i: Parameters<FetchFn>[1]) => mock(u, i)) as FetchFn });
+    const suggest = createSuggester(d);
+    const o = { bundleId: "com.tinycast.app", count: 24 };
+    const first = suggest("party", o);
+    const second = suggest("party", o);
+    await expect(first).rejects.toThrow(/500/);
+    await expect(second).rejects.toThrow(/500/);
+    expect(mock).toHaveBeenCalledTimes(1);
+    await expect(suggest("party", o)).resolves.toBeTruthy();
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
   it("uses a persistent cache when provided", async () => {
     const store = new Map<string, string>();
     const cache = { get: (k: string) => store.get(k), set: (k: string, v: string) => void store.set(k, v) };

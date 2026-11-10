@@ -21,6 +21,8 @@ export const execFileAsync: ExecFn = (file, args, options) =>
           const e = new Error(detail ? `${error.message}\n${detail}` : error.message);
           (e as Error & { stderr?: string; stdout?: string }).stderr = err;
           (e as Error & { stderr?: string; stdout?: string }).stdout = out;
+          const failure = error as Error & { killed?: boolean; signal?: string | null };
+          if (failure.killed && failure.signal === "SIGTERM") (e as Error & { timedOut?: boolean }).timedOut = true;
           reject(e);
           return;
         }
