@@ -24,8 +24,9 @@ mood and slang.
   app (read through the macOS Accessibility API) becomes the first search, and the AI request
   starts at once. The grid opens immediately and fills in when the selection has been read. With
   nothing selected, or without the Accessibility permission, nothing happens and you get the
-  normal search. Typing replaces it; clearing the field brings it back. Turn it off with the
-  **Selected Text** preference.
+  normal search. A selection longer than 300 characters is not used (and not sent anywhere), so
+  a passage of a document stays local. Typing replaces it; clearing the field brings it back. Turn
+  it off with the **Selected Text** preference.
 - **Search from the launcher**: the command takes an optional text argument. Type the command's
   alias or name, then Tab/space for the argument, as Tinycast shows it (for example
   `finally friday`), and the results open straight away. The argument counts as an initial query
@@ -91,7 +92,7 @@ When the extension runs in Raycast itself, it uses Raycast AI.
 | Primary Action       | Paste    | Whether Enter pastes or copies                                                         |
 | Skin Tone            | Default  | Skin tone applied to emojis that support one (shown, pasted and copied)                |
 | Name Search Language | System   | Extra language for the instant name matches (English is always searched)               |
-| Selected Text        | On       | Use the selection of the frontmost app as the first search when the command starts     |
+| Selected Text        | On       | Use the selection (up to 300 characters) as the first search when the command starts   |
 
 ### Speed
 
@@ -114,8 +115,9 @@ How long a search takes depends almost entirely on the model:
 
 What you type is sent to the AI provider configured in Tinycast (or run through the local Claude
 Code / Codex tool). With **Selected Text** on, the selection of the frontmost app is read when the
-command starts and sent the same way, like typed text; turn the preference off to avoid this.
-Nothing is read when you give the command an argument. Name search, recents and usage ranking stay
+command starts and sent the same way, like typed text, but only when it is at most 300 characters
+long; a longer selection is ignored and never sent. Turn the preference off to avoid this
+altogether. Nothing is read when you give the command an argument. Name search, recents and usage ranking stay
 on your Mac.
 
 ## Troubleshooting

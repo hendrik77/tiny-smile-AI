@@ -38,6 +38,8 @@ const MAX_RECENTS = 32;
 const MODEL_KEY = "model-override";
 const USAGE_KEY = "emoji-usage";
 const MAX_INITIAL_QUERY = 500;
+/** Longer selections are not used, so a passage of a document never goes to the AI provider. */
+export const MAX_SELECTION_LENGTH = 300;
 const MAX_TITLE_QUERY = 40;
 
 interface AIState {
@@ -67,13 +69,16 @@ function makeDeps(): SuggesterDeps {
   };
 }
 
-function useDebounced<T>(value: T, delay: number): T {
+/** Debounces typed text; an emptied field resets at once, so a retype never revives the old value. */
+function useDebounced(value: string, delay: number): string {
   const [debounced, setDebounced] = useState(value);
+  if (value === "" && debounced !== "") setDebounced("");
   useEffect(() => {
+    if (value === "") return;
     const timer = setTimeout(() => setDebounced(value), delay);
     return () => clearTimeout(timer);
   }, [value, delay]);
-  return debounced;
+  return value === "" ? "" : debounced;
 }
 
 function useRecents() {
@@ -153,9 +158,11 @@ function useLaunchSelection(enabled: boolean, hasTyped: React.RefObject<boolean>
     getSelectedText()
       .then((raw) => {
         if (cancelled) return;
-        const text = cleanQuery(raw);
+        const text = (raw ?? "").trim();
         if (hasTyped.current) setState({ status: "unused", reason: "typed before the selection was read" });
         else if (!text) setState({ status: "unused", reason: "selection is blank" });
+        else if (text.length > MAX_SELECTION_LENGTH)
+          setState({ status: "unused", reason: `selection is longer than ${MAX_SELECTION_LENGTH} characters` });
         else setState({ status: "used", text });
       })
       .catch((error: unknown) => {

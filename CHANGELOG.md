@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- A selection longer than 300 characters is no longer used as the first search and is not sent to
+  the AI provider; Copy Diagnostics says why it was not used. The launcher argument keeps its
+  500-character cap.
+
+### Fixed
+
+- Clearing the field and quickly typing something new no longer fires a request for the text that
+  was cleared.
+
+### Internal
+
+- A test checks that `src/data/emoji.json` and `src/data/keywords-de.json` match their generators;
+  `npm run build:data` regenerates both.
+- `eval/` is now type-checked by `npm run typecheck`.
+- Upgraded vitest to 5.x and ran `npm audit fix` for the development dependencies.
+
 ## [1.2.0] - 2026-11-10
 
 ### Added
