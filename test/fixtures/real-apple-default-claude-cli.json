@@ -1,0 +1,15 @@
+{
+  "note": "Copy Diagnostics from a real Mac (2026-11-10): Apple Intelligence as Tinycast default, installed Claude tool switched on, no API connections. This setup used to fail with 'No AI model available'.",
+  "settings": {
+    "defaultModel": { "kind": "appleIntelligence" },
+    "connections": [],
+    "disabledRoutes": [],
+    "enabledInstalledProviders": ["claude"]
+  },
+  "rawKeys": [
+    { "name": "aiDefaultModel", "type": "data" },
+    { "name": "aiEnabled", "type": "boolean" },
+    { "name": "aiInstalledProviders", "type": "data" },
+    { "name": "aiSystemPrompt", "type": "string" }
+  ]
+}
